@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { 
   Wallet, FileText, Loader2, ArrowUpCircle, ArrowDownCircle, Calendar,
-  ChevronLeft, ChevronRight, Search
+  ChevronLeft, ChevronRight, Search, Info, TrendingUp, TrendingDown
 } from 'lucide-react'; 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -63,13 +63,13 @@ export default function PublicKasView() {
   // Logika Filter & Normalisasi
   const filteredData = kasData.filter(item => {
     const isMasuk = DAFTAR_PEMASUKAN.includes(item.kategori) || item.jenis_transaksi === 'Masuk';
-    const type = isMasuk ? 'Masuk' : 'Keluar';
     const matchDate = item.tanggal_transaksi >= startDate && item.tanggal_transaksi <= endDate;
     const matchSearch = item.nama_pembayar.toLowerCase().includes(searchTerm.toLowerCase()) || 
                         item.kategori.toLowerCase().includes(searchTerm.toLowerCase());
     return matchDate && matchSearch;
   }).map(item => ({
     ...item,
+    // Normalisasi jenis transaksi berdasarkan daftar kategori pemasukan yang sudah didefinisikan
     jenis_transaksi: (DAFTAR_PEMASUKAN.includes(item.kategori) ? 'Masuk' : item.jenis_transaksi) as 'Masuk' | 'Keluar'
   }));
 
@@ -106,7 +106,6 @@ export default function PublicKasView() {
   const exportToPDF = async () => {
     try {
       const doc = new jsPDF('p', 'mm', 'a4');
-      const locationDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
       // Kop Surat
       try {
@@ -129,7 +128,7 @@ export default function PublicKasView() {
           item.tanggal_transaksi,
           item.nama_pembayar,
           item.kategori,
-          item.jenis_transaksi,
+          item.jenis_transaksi.toUpperCase(),
           `Rp ${item.jumlah_bayar.toLocaleString()}`
         ]),
         headStyles: { fillColor: [30, 64, 175] },
@@ -148,130 +147,202 @@ export default function PublicKasView() {
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8 bg-white text-slate-900 rounded-3xl shadow-xl border border-slate-100">
-      {/* Header Landing Page */}
+      {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8">
         <div>
-          <h2 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-3">
-            <div className="p-2 bg-blue-600 rounded-lg text-white"><Wallet size={24}/></div>
+          <h2 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-3 italic">
+            <div className="p-2 bg-blue-600 rounded-xl text-white shadow-lg shadow-blue-200"><Wallet size={24}/></div>
             TRANSPARANSI KAS
           </h2>
-          <p className="text-slate-500 mt-1 font-medium">Laporan keuangan real-time PB. Bili Bili 162</p>
+          <p className="text-slate-500 mt-1 font-medium flex items-center gap-2">
+            <Info size={14} className="text-blue-500" />
+            Laporan arus kas masuk dan keluar PB. Bili Bili 162 secara real-time.
+          </p>
         </div>
         
         <button 
           onClick={exportToPDF}
-          className="flex items-center gap-2 px-5 py-3 bg-blue-600 text-white rounded-2xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+          className="flex items-center gap-2 px-6 py-3.5 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-blue-600 transition-all shadow-xl active:scale-95"
         >
-          <FileText size={18}/> Unduh Laporan (.PDF)
+          <FileText size={16}/> Unduh Laporan PDF
         </button>
       </div>
 
       {/* Filter Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 bg-slate-50 p-6 rounded-2xl border border-slate-100">
-        <div>
-          <label className="text-[10px] font-bold uppercase text-slate-400 mb-2 block">Cari Transaksi</label>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
+        <div className="space-y-2">
+          <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Cari Transaksi</label>
           <div className="relative">
-            <Search className="absolute left-3 top-3 text-slate-400" size={18}/>
+            <Search className="absolute left-4 top-3 text-slate-400" size={18}/>
             <input 
               type="text" 
-              placeholder="Nama atau kategori..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              placeholder="Cari nama atau kategori..."
+              className="w-full pl-11 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm bg-white"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
         </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase text-slate-400 mb-2 block">Mulai Tanggal</label>
+        <div className="space-y-2">
+          <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Dari Tanggal</label>
           <input 
             type="date" 
-            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none"
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none font-bold text-sm bg-white"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
           />
         </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase text-slate-400 mb-2 block">Sampai Tanggal</label>
+        <div className="space-y-2">
+          <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Sampai Tanggal</label>
           <input 
             type="date" 
-            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none"
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 outline-none font-bold text-sm bg-white"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
           />
         </div>
       </div>
 
-      {/* Stats Summary Area */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div className="bg-emerald-50 border-l-4 border-emerald-500 p-5 rounded-r-2xl">
-          <p className="text-xs font-bold text-emerald-600 uppercase flex items-center gap-2"><ArrowUpCircle size={14}/> Pemasukan</p>
-          <p className="text-2xl font-black text-emerald-700 mt-1">Rp {stats.masuk.toLocaleString()}</p>
+      {/* Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[2rem] relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+            <TrendingUp size={80} className="text-emerald-600" />
+          </div>
+          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-2">Total Pemasukan</p>
+          <p className="text-3xl font-black text-emerald-700 tracking-tighter">Rp {stats.masuk.toLocaleString()}</p>
         </div>
-        <div className="bg-red-50 border-l-4 border-red-500 p-5 rounded-r-2xl">
-          <p className="text-xs font-bold text-red-600 uppercase flex items-center gap-2"><ArrowDownCircle size={14}/> Pengeluaran</p>
-          <p className="text-2xl font-black text-red-700 mt-1">Rp {stats.keluar.toLocaleString()}</p>
+        
+        <div className="bg-rose-50 border border-rose-100 p-6 rounded-[2rem] relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+            <TrendingDown size={80} className="text-rose-600" />
+          </div>
+          <p className="text-[10px] font-black text-rose-600 uppercase tracking-[0.2em] mb-2">Total Pengeluaran</p>
+          <p className="text-3xl font-black text-rose-700 tracking-tighter">Rp {stats.keluar.toLocaleString()}</p>
         </div>
-        <div className="bg-blue-600 p-5 rounded-2xl shadow-lg shadow-blue-100">
-          <p className="text-xs font-bold text-blue-100 uppercase">Saldo Periode Ini</p>
-          <p className="text-2xl font-black text-white mt-1">Rp {(stats.masuk - stats.keluar).toLocaleString()}</p>
+        
+        <div className="bg-blue-600 p-6 rounded-[2rem] shadow-2xl shadow-blue-200 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-20">
+            <Wallet size={80} className="text-white" />
+          </div>
+          <p className="text-[10px] font-black text-blue-100 uppercase tracking-[0.2em] mb-2">Saldo Bersih</p>
+          <p className="text-3xl font-black text-white tracking-tighter">Rp {(stats.masuk - stats.keluar).toLocaleString()}</p>
         </div>
       </div>
 
-      {/* Table Area */}
-      <div className="border border-slate-100 rounded-3xl overflow-hidden shadow-sm">
-        <table className="w-full text-left">
-          <thead className="bg-slate-800 text-white">
-            <tr className="text-[11px] uppercase tracking-widest">
-              <th className="p-5">Waktu</th>
-              <th className="p-5">Keterangan</th>
-              <th className="p-5">Kategori</th>
-              <th className="p-5 text-right">Nominal</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {loading ? (
-              <tr><td colSpan={4} className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" /></td></tr>
-            ) : currentItems.length === 0 ? (
-              <tr><td colSpan={4} className="p-20 text-center text-slate-400 font-medium">Data tidak ditemukan pada periode ini.</td></tr>
-            ) : currentItems.map((item) => (
-              <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                <td className="p-5">
-                  <div className="flex items-center gap-2 text-slate-400 text-xs font-bold uppercase">
-                    <Calendar size={12}/> {item.tanggal_transaksi}
-                  </div>
-                </td>
-                <td className="p-5">
-                  <p className="font-bold text-slate-800 uppercase text-sm">{item.nama_pembayar}</p>
-                </td>
-                <td className="p-5">
-                   <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${item.jenis_transaksi === 'Masuk' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
-                      {item.kategori}
-                   </span>
-                </td>
-                <td className={`p-5 text-right font-black ${item.jenis_transaksi === 'Masuk' ? 'text-emerald-600' : 'text-red-600'}`}>
-                  {item.jenis_transaksi === 'Masuk' ? '+' : '-'} Rp {item.jumlah_bayar.toLocaleString()}
-                </td>
+      {/* Main Table Content */}
+      <div className="bg-white border border-slate-100 rounded-[2rem] overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-900 text-white">
+                <th className="p-6 text-[10px] font-black uppercase tracking-widest">Waktu Transaksi</th>
+                <th className="p-6 text-[10px] font-black uppercase tracking-widest">Keterangan / Nama</th>
+                <th className="p-6 text-[10px] font-black uppercase tracking-widest text-center">Tipe</th>
+                <th className="p-6 text-[10px] font-black uppercase tracking-widest">Kategori Transaksi</th>
+                <th className="p-6 text-[10px] font-black uppercase tracking-widest text-right">Nominal</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="p-20 text-center">
+                    <div className="flex flex-col items-center gap-3">
+                      <Loader2 className="animate-spin text-blue-600" size={40} />
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Menyinkronkan Data...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : currentItems.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-20 text-center">
+                    <div className="max-w-xs mx-auto">
+                      <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Search className="text-slate-300" size={30} />
+                      </div>
+                      <p className="text-slate-500 font-bold">Tidak ada data ditemukan</p>
+                      <p className="text-xs text-slate-400 mt-1">Coba sesuaikan filter tanggal atau kata kunci pencarian Anda.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : currentItems.map((item) => {
+                const isIncome = item.jenis_transaksi === 'Masuk';
+                return (
+                  <tr key={item.id} className="hover:bg-slate-50/50 transition-colors group">
+                    <td className="p-6">
+                      <div className="flex items-center gap-2.5 text-slate-400 text-[11px] font-black uppercase tracking-tight">
+                        <Calendar size={14} className="text-blue-500" /> 
+                        {new Date(item.tanggal_transaksi).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </div>
+                    </td>
+                    <td className="p-6">
+                      <p className="font-black text-slate-800 uppercase text-xs tracking-tight group-hover:text-blue-600 transition-colors">{item.nama_pembayar}</p>
+                    </td>
+                    <td className="p-6 text-center">
+                       <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-tighter ${isIncome ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                          {isIncome ? <ArrowUpCircle size={10}/> : <ArrowDownCircle size={10}/>}
+                          {item.jenis_transaksi}
+                       </div>
+                    </td>
+                    <td className="p-6">
+                       <span className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-black uppercase tracking-wider border border-slate-200">
+                          {item.kategori}
+                       </span>
+                       {item.jumlah_bola > 0 && (
+                         <span className="ml-2 text-[10px] font-bold text-blue-500">
+                           {item.jumlah_bola} Bola
+                         </span>
+                       )}
+                    </td>
+                    <td className={`p-6 text-right font-black text-sm tracking-tight ${isIncome ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {isIncome ? '+' : '-'} Rp {item.jumlah_bayar.toLocaleString()}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
 
-        {/* Public Pagination */}
-        <div className="p-5 bg-slate-50 flex items-center justify-between">
-           <p className="text-xs text-slate-400 font-bold">Menampilkan {currentItems.length} data</p>
-           <div className="flex gap-2">
+        {/* Improved Pagination Section */}
+        <div className="p-6 bg-slate-50 flex flex-col md:flex-row items-center justify-between gap-4 border-t border-slate-100">
+           <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
+              Menampilkan <span className="text-slate-900">{currentItems.length}</span> dari <span className="text-slate-900">{filteredData.length}</span> Entri Transaksi
+           </div>
+           <div className="flex items-center gap-3">
               <button 
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(prev => prev - 1)}
-                className="p-2 bg-white border border-slate-200 rounded-lg disabled:opacity-30"
-              ><ChevronLeft size={18}/></button>
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-black text-[10px] uppercase tracking-widest text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-100 transition-all"
+              >
+                <ChevronLeft size={14}/> Prev
+              </button>
+              <div className="flex gap-1">
+                {[...Array(totalPages)].map((_, i) => (
+                  <button 
+                    key={i}
+                    onClick={() => setCurrentPage(i + 1)}
+                    className={`w-8 h-8 rounded-lg font-black text-[10px] transition-all ${currentPage === i + 1 ? 'bg-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white text-slate-400 hover:bg-slate-200'}`}
+                  >
+                    {i + 1}
+                  </button>
+                )).slice(Math.max(0, currentPage - 3), Math.min(totalPages, currentPage + 2))}
+              </div>
               <button 
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(prev => prev + 1)}
-                className="p-2 bg-white border border-slate-200 rounded-lg disabled:opacity-30"
-              ><ChevronRight size={18}/></button>
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl font-black text-[10px] uppercase tracking-widest text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-100 transition-all"
+              >
+                Next <ChevronRight size={14}/>
+              </button>
            </div>
         </div>
+      </div>
+
+      {/* Footer Info */}
+      <div className="mt-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
+        <p>© 2026 PB. BILI BILI 162 - Financial Transparency System</p>
+        <p className="flex items-center gap-2"><div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" /> Sistem Terkoneksi Supabase Cloud</p>
       </div>
     </div>
   );
