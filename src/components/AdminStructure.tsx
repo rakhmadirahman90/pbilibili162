@@ -50,7 +50,7 @@ const Toast = ({ message, type, onClose }: { message: string, type: 'success' | 
 // --- KOMPONEN SORTABLE ITEM UNTUK LIST ---
 function SortableMemberRow({ member, onEdit, onDelete }: any) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ 
-    id: member.id // Pastikan ID stabil (UUID dari database)
+    id: member.id 
   });
   
   const style = { 
@@ -128,29 +128,14 @@ export default function AdminStructure() {
     }
   };
 
-  const runCleaner = async () => {
-    if (!confirm("Hapus semua file foto lama yang berukuran besar (>500KB) di server? Tindakan ini tidak bisa dibatalkan.")) return;
-    setLoading(true);
-    try {
-      const response = await fetch('https://pbus162.com/assets/struktur/cleaner.php?pass=pbus162_aman');
-      if (!response.ok) throw new Error("Server cleaner tidak merespon");
-      const result = await response.json();
-      if (result.status === 'success') {
-        setToast({ msg: result.message, type: 'success' });
-      } else {
-        setToast({ msg: result.message || 'GAGAL MEMBERSIHKAN SERVER', type: 'error' });
-      }
-    } catch (err: any) {
-      setToast({ msg: 'KONEKSI KE CLEANER GAGAL: ' + err.message, type: 'error' });
-    } finally {
-      setLoading(false);
-    }
+  // Cleaner dimatikan karena domain pbus162.com mati
+  const runCleaner = () => {
+    setToast({ msg: 'FITUR CLEANER PHP NONAKTIF (DOMAIN EXPIRED)', type: 'error' });
   };
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      // Validasi ukuran (misal max 5MB sebelum crop)
       if (file.size > 5 * 1024 * 1024) {
         setToast({ msg: 'FILE TERLALU BESAR (MAX 5MB)', type: 'error' });
         return;
@@ -163,6 +148,7 @@ export default function AdminStructure() {
 
   const onCropComplete = useCallback((_: any, pixels: any) => { setCroppedAreaPixels(pixels); }, []);
 
+  // --- FIX: MENGGUNAKAN SUPABASE STORAGE SEBAGAI PENGGANTI PHP ---
   const handleProcessImage = async () => {
     if (!imageSrc || !croppedAreaPixels) return;
     setUploading(true);
@@ -190,29 +176,34 @@ export default function AdminStructure() {
         );
       }
 
-      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', 0.8));
+      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', 0.85));
       if (!blob) throw new Error("Gagal membuat blob");
       
-      const formDataUpload = new FormData();
-      formDataUpload.append('photo', blob, `pbus-${Date.now()}.jpg`);
+      const fileName = `branding/member_${Date.now()}.jpg`;
 
-      const response = await fetch('https://pbus162.com/assets/struktur/upload.php', {
-        method: 'POST',
-        body: formDataUpload,
-      });
+      // Upload ke Supabase Storage (Bucket: assets)
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('assets')
+        .upload(fileName, blob, {
+          contentType: 'image/jpeg',
+          upsert: true
+        });
+
+      if (uploadError) throw uploadError;
+
+      // Ambil URL Publik
+      const { data: publicUrlData } = supabase.storage
+        .from('assets')
+        .getPublicUrl(fileName);
       
-      if (!response.ok) throw new Error("Gagal mengupload ke server assets");
-      const result = await response.json();
+      const finalUrl = publicUrlData.publicUrl;
+
+      setFormData(prev => ({ ...prev, photo_url: finalUrl }));
+      setImageSrc(null);
+      setToast({ msg: 'FOTO BERHASIL DIUPLOAD KE STORAGE', type: 'success' });
       
-      if (result.status === 'success') {
-        setFormData(prev => ({ ...prev, photo_url: result.url }));
-        setImageSrc(null);
-        setToast({ msg: 'FOTO BERHASIL DIUPLOAD', type: 'success' });
-      } else {
-        throw new Error(result.message);
-      }
     } catch (err: any) { 
-      setToast({ msg: 'ERROR: ' + err.message, type: 'error' }); 
+      setToast({ msg: 'UPLOAD ERROR: ' + err.message, type: 'error' }); 
     } finally { 
       setUploading(false); 
     }
@@ -269,7 +260,6 @@ export default function AdminStructure() {
       level: m.level, 
       photo_url: m.photo_url || '' 
     });
-    // Scroll ke atas form
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -288,7 +278,6 @@ export default function AdminStructure() {
     if (members.length === 0) return;
     setIsSavingOrder(true);
     try {
-      // Upsert memerlukan primary key 'id' untuk mengupdate baris yang ada
       const updates = members.map((m, index) => ({ 
         id: m.id, 
         sort_order: index, 
@@ -383,7 +372,7 @@ export default function AdminStructure() {
             <div className="flex gap-4">
               <button onClick={() => setImageSrc(null)} className="flex-1 py-4 rounded-2xl bg-white/5 font-black uppercase text-[10px] tracking-widest hover:bg-white/10 transition-colors">Batal</button>
               <button onClick={handleProcessImage} disabled={uploading} className="flex-1 py-4 rounded-2xl bg-blue-600 font-black uppercase text-[10px] tracking-widest flex justify-center items-center gap-2 hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/20 disabled:opacity-50">
-                {uploading ? <Loader2 className="animate-spin" size={16} /> : 'Terapkan & Kompres'}
+                {uploading ? <Loader2 className="animate-spin" size={16} /> : 'Terapkan & Upload'}
               </button>
             </div>
           </div>
@@ -500,7 +489,7 @@ export default function AdminStructure() {
                 >
                   <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
                 </button>
-                <button onClick={runCleaner} title="Bersihkan File Sampah" className="p-2 bg-red-500/10 text-red-500 border border-red-500/20 rounded-full hover:bg-red-500 hover:text-white transition-all">
+                <button onClick={runCleaner} title="Cleaner Nonaktif" className="p-2 bg-slate-800 text-slate-500 border border-white/10 rounded-full cursor-not-allowed">
                   <Eraser size={12} />
                 </button>
                 <button 
@@ -522,7 +511,7 @@ export default function AdminStructure() {
                     member={m} 
                     onEdit={startEdit} 
                     onDelete={async (member: any) => { 
-                      if(confirm(`Hapus ${member.name}? Data akan dihapus permanen dari database.`)) { 
+                      if(confirm(`Hapus ${member.name}? Data akan dihapus permanen.`)) { 
                         try {
                           const { error } = await supabase.from('organizational_structure').delete().eq('id', member.id); 
                           if (error) throw error;
@@ -563,11 +552,10 @@ export default function AdminStructure() {
             <div className="inline-block px-5 py-1.5 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-[0.3em] mb-6">Organizational Profile</div>
             <h1 className="text-7xl font-black text-slate-900 italic tracking-tighter mb-8 uppercase leading-none">Struktur <span className="text-blue-600">Organisasi</span></h1>
             <div className="w-32 h-2 bg-blue-600 mx-auto rounded-full mb-8"></div>
-            <p className="text-slate-400 font-bold text-sm uppercase tracking-[0.4em]">PB US 162 • Periode 2024 - 2028</p>
+            <p className="text-slate-400 font-bold text-sm uppercase tracking-[0.4em]">PB BILI BILI 162 • Periode 2024 - 2028</p>
           </div>
 
           <div className="relative flex flex-col items-center">
-            {/* Garis Tengah Silsilah */}
             <div className="absolute top-0 bottom-0 w-[2px] bg-gradient-to-b from-blue-100 via-blue-200 to-transparent left-1/2 -translate-x-1/2 -z-0"></div>
 
             <LayoutGroup>
