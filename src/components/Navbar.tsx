@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Globe, ChevronDown, Menu, X, MapPin, UserPlus } from 'lucide-react';
+import { Globe, ChevronDown, Menu, X, MapPin, UserPlus, Wallet } from 'lucide-react';
 import { supabase } from '../supabase'; 
 
 interface NavbarProps {
@@ -19,7 +19,7 @@ export default function Navbar({ onNavigate }: NavbarProps) {
     default_lang: 'ID'
   });
 
-  // --- KODE BARU: FETCH DATA NAVIGASI DENGAN FALLBACK ---
+  // --- FETCH DATA NAVIGASI DENGAN PENAMBAHAN MENU KAS ---
   const fetchNavSettings = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -29,19 +29,28 @@ export default function Navbar({ onNavigate }: NavbarProps) {
       
       if (error) throw error;
 
-      if (data && data.length > 0) {
-        setNavData(data);
-      } else {
-        // Fallback jika data kosong agar navbar tidak hilang total
-        setNavData([
+      let finalNav = data || [];
+
+      // Jika data kosong, gunakan fallback default
+      if (finalNav.length === 0) {
+        finalNav = [
           { id: '1', label: 'Home', path: 'home', type: 'link', order_index: 0 },
           { id: '2', label: 'Tentang Kami', path: 'tentang-kami', type: 'dropdown', order_index: 1 },
           { id: '3', label: 'Berita', path: 'berita', type: 'link', order_index: 2 },
+          { id: '4', label: 'Kas', path: 'kas', type: 'link', order_index: 3 }, // Menu KAS Manual Fallback
           { id: '2-1', parent_id: '2', label: 'Sejarah', path: 'sejarah' },
           { id: '2-2', parent_id: '2', label: 'Visi Misi', path: 'visi-misi' },
           { id: '2-3', parent_id: '2', label: 'Fasilitas', path: 'fasilitas' }
-        ]);
+        ];
+      } else {
+        // Cek apakah menu 'kas' sudah ada di database, jika belum tambahkan secara lokal
+        const hasKas = finalNav.some((item: any) => item.path === 'kas');
+        if (!hasKas) {
+          finalNav.push({ id: 'kas-dynamic', label: 'Kas', path: 'kas', type: 'link', order_index: 99 });
+        }
       }
+      
+      setNavData(finalNav);
     } catch (err) {
       console.error("Fetch Nav Error:", err);
     }
@@ -90,15 +99,13 @@ export default function Navbar({ onNavigate }: NavbarProps) {
       return;
     }
 
-    // 2. Jika Path adalah 'tentang-kami'
-    if (path === 'tentang-kami' || path === 'about') {
-      onNavigate('tentang-kami', subPath);
-      
-      // Delay sedikit agar state tab di parent ter-update sebelum scroll
+    // 2. Penanganan Khusus Menu KAS
+    if (path === 'kas') {
+      onNavigate('kas');
       setTimeout(() => {
-        const element = document.getElementById('tentang-kami');
+        const element = document.getElementById('kas-section'); // Pastikan ID di landing page sesuai
         if (element) {
-          const offset = 100; // Header offset
+          const offset = 100;
           const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
           window.scrollTo({ top: elementPosition - offset, behavior: 'smooth' });
         }
@@ -106,11 +113,23 @@ export default function Navbar({ onNavigate }: NavbarProps) {
       return;
     }
 
-    // 3. Penanganan Section Lain (Berita, Galeri, dll)
-    onNavigate(path, subPath);
+    // 3. Jika Path adalah 'tentang-kami'
+    if (path === 'tentang-kami' || path === 'about') {
+      onNavigate('tentang-kami', subPath);
+      setTimeout(() => {
+        const element = document.getElementById('tentang-kami');
+        if (element) {
+          const offset = 100;
+          const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
+          window.scrollTo({ top: elementPosition - offset, behavior: 'smooth' });
+        }
+      }, 100);
+      return;
+    }
 
+    // 4. Penanganan Section Lain
+    onNavigate(path, subPath);
     setTimeout(() => {
-      // Prioritaskan ID subPath jika ada (deep linking)
       const targetId = subPath || path;
       const element = document.getElementById(targetId);
       if (element) {
@@ -153,9 +172,11 @@ export default function Navbar({ onNavigate }: NavbarProps) {
             >
               <button 
                 onClick={() => handleNavClick(menu.path)}
-                className={`nav-link flex items-center gap-1.5 ${activeDropdown === menu.id ? 'text-blue-400' : ''}`}
+                className={`nav-link flex items-center gap-1.5 ${activeDropdown === menu.id ? 'text-blue-400' : ''} ${menu.path === 'kas' ? 'text-blue-400 font-black' : ''}`}
               >
-                {menu.label} {menu.type === 'dropdown' && <ChevronDown size={10} className={`transition-transform duration-300 ${activeDropdown === menu.id ? 'rotate-180' : ''}`} />}
+                {menu.path === 'kas' && <Wallet size={12} className="mr-1" />}
+                {menu.label} 
+                {menu.type === 'dropdown' && <ChevronDown size={10} className={`transition-transform duration-300 ${activeDropdown === menu.id ? 'rotate-180' : ''}`} />}
               </button>
 
               {menu.type === 'dropdown' && activeDropdown === menu.id && (
@@ -210,9 +231,13 @@ export default function Navbar({ onNavigate }: NavbarProps) {
             <React.Fragment key={menu.id}>
               <button 
                 onClick={() => menu.type !== 'dropdown' ? handleNavClick(menu.path) : (activeDropdown === menu.id ? setActiveDropdown(null) : setActiveDropdown(menu.id))}
-                className={`mobile-nav-link flex justify-between items-center ${activeDropdown === menu.id ? 'text-blue-400' : ''}`}
+                className={`mobile-nav-link flex justify-between items-center ${activeDropdown === menu.id ? 'text-blue-400' : ''} ${menu.path === 'kas' ? 'text-blue-400' : ''}`}
               >
-                {menu.label} {menu.type === 'dropdown' && <ChevronDown size={16} className={activeDropdown === menu.id ? 'rotate-180' : ''} />}
+                <span className="flex items-center gap-2">
+                  {menu.path === 'kas' && <Wallet size={16} />}
+                  {menu.label}
+                </span>
+                {menu.type === 'dropdown' && <ChevronDown size={16} className={activeDropdown === menu.id ? 'rotate-180' : ''} />}
               </button>
               {menu.type === 'dropdown' && activeDropdown === menu.id && (
                 <div className="flex flex-col gap-4 pl-4 border-l-2 border-blue-500/30 ml-2 py-2 animate-in slide-in-from-left-2 duration-200">

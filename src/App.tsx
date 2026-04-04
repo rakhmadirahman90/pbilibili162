@@ -16,6 +16,7 @@ import Gallery from './components/Gallery';
 import RegistrationForm from './components/RegistrationForm'; 
 import Contact from './components/Contact'; 
 import Footer from './components/Footer';
+import PublicKasView from './components/PublicKasView'; // BARU: View Publik untuk Anggota
 
 // Komponen yang tampil di depan (Landing Page)
 import StrukturOrganisasi from './components/StrukturOrganisasi'; 
@@ -46,7 +47,7 @@ import AdminStructure from './components/AdminStructure';
 import { KelolaSurat } from './components/KelolaSurat'; 
 import KasManager from './components/KasManager'; // BARU: Import Kelola Kas
 
-import { X, ChevronLeft, ChevronRight, Menu, Zap, Download, ArrowUp, ExternalLink, Wallet } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Menu, Zap, Download, ArrowUp, ExternalLink, Wallet, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // HELPER: Auto Scroll ke atas setiap pindah route
@@ -190,6 +191,7 @@ export default function App() {
   const [activeAboutTab, setActiveAboutTab] = useState('sejarah');
   const [activeAthleteFilter, setActiveAthleteFilter] = useState('all');
   const [showStruktur, setShowStruktur] = useState(false); 
+  const [showKas, setShowKas] = useState(false); // BARU: State untuk menampilkan Laporan Kas
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -203,12 +205,26 @@ export default function App() {
   }, []);
 
   const handleNavigate = (sectionId: string, subPath?: string) => {
-    if (sectionId === 'struktur' || subPath === 'organisasi' || sectionId === 'organization') {
-        setShowStruktur(true);
+    // Penanganan Navigasi Kas
+    if (sectionId === 'kas') {
+        setShowKas(true);
+        setShowStruktur(false);
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
     }
+
+    // Penanganan Navigasi Struktur
+    if (sectionId === 'struktur' || subPath === 'organisasi' || sectionId === 'organization') {
+        setShowStruktur(true);
+        setShowKas(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+    }
+
+    // Reset view khusus jika menavigasi ke section landing page biasa
     setShowStruktur(false);
+    setShowKas(false);
+
     if (sectionId === 'tentang-kami' || ['sejarah', 'visi-misi', 'fasilitas'].includes(subPath || '')) {
       if (subPath) setActiveAboutTab(subPath);
     }
@@ -248,7 +264,8 @@ export default function App() {
             <ImagePopup />
             <Navbar onNavigate={handleNavigate} />
             <AnimatePresence mode="wait">
-              {!showStruktur ? (
+              {/* LOGIKA TAMPILAN DINAMIS */}
+              {!showStruktur && !showKas ? (
                 <motion.div key="landing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full">
                   <Hero />
                   <About activeTab={activeAboutTab} onTabChange={(id) => setActiveAboutTab(id)} />
@@ -263,15 +280,28 @@ export default function App() {
                   </section>
                   <Contact />
                 </motion.div>
-              ) : (
-                <motion.div key="struktur" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="pt-20 bg-slate-50 min-h-screen w-full">
+              ) : showStruktur ? (
+                <motion.div key="struktur" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="pt-24 bg-slate-50 min-h-screen w-full">
                   <StrukturOrganisasi />
                   <motion.button 
                     whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                     onClick={() => { setShowStruktur(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                     className="fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-slate-900 text-white rounded-full font-black text-[11px] tracking-[0.2em] shadow-2xl z-50 uppercase flex items-center gap-3 border border-white/10"
                   >
-                    <ArrowUp size={16} /> Kembali ke Beranda
+                    <ArrowLeft size={16} /> Kembali ke Beranda
+                  </motion.button>
+                </motion.div>
+              ) : (
+                <motion.div key="kas-view" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="pt-32 pb-20 bg-slate-50 min-h-screen w-full">
+                  <div id="kas-section">
+                    <PublicKasView />
+                  </div>
+                  <motion.button 
+                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                    onClick={() => { setShowKas(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    className="fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-blue-600 text-white rounded-full font-black text-[11px] tracking-[0.2em] shadow-2xl z-50 uppercase flex items-center gap-3 border border-white/10"
+                  >
+                    <ArrowLeft size={16} /> Kembali ke Beranda
                   </motion.button>
                 </motion.div>
               )}
