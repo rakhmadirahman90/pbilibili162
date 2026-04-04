@@ -2,8 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase';
 import { 
   Wallet, Plus, Search, FileText, Loader2, CheckCircle2, Filter, 
-  Trash2, Edit3, X, ArrowUpCircle, ArrowDownCircle, Calendar,
-  ChevronLeft, ChevronRight
+  Trash2, Edit3, X, ArrowUpCircle, ArrowDownCircle, Calendar
 } from 'lucide-react'; 
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -44,10 +43,6 @@ export default function KasManager() {
   const [atlets, setAtlets] = useState<Atlet[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-
   const today = new Date().toISOString().split('T')[0];
   const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
   const [startDate, setStartDate] = useState(firstDayOfMonth);
@@ -74,12 +69,6 @@ export default function KasManager() {
   const filteredData = normalizedData.filter(item => {
     return item.tanggal_transaksi >= startDate && item.tanggal_transaksi <= endDate;
   });
-
-  // Logika Pagination
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
   const stats = filteredData.reduce((acc, curr) => {
     if (curr.jenis_transaksi === 'Masuk') acc.masuk += curr.jumlah_bayar;
@@ -116,6 +105,7 @@ export default function KasManager() {
       const fullDateStr = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       const locationDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
+      // 1. Logo & Header
       try {
         const transparentLogo = await getTransparentImageData(PB_LOGO_URL);
         doc.addImage(transparentLogo, 'PNG', 14, 10, 22, 22, undefined, 'FAST');
@@ -124,11 +114,14 @@ export default function KasManager() {
       doc.setFontSize(20).setFont("helvetica", "bold").setTextColor(30, 64, 175).text('PB. BILI BILI 162', 42, 18);
       doc.setFontSize(9).setFont("helvetica", "normal").setTextColor(100).text('Jl. Bili-Bili No. 162, Parepare, Sulawesi Selatan', 42, 24);
       doc.text(`Periode Laporan: ${startDate} s/d ${endDate}`, 42, 29);
+
       doc.setDrawColor(30, 64, 175).setLineWidth(0.8).line(14, 38, 196, 38);
 
+      // 2. Judul Laporan
       doc.setFontSize(14).setFont("helvetica", "bold").setTextColor(0).text('LAPORAN PERTANGGUNGJAWABAN KAS', 14, 48);
       doc.setFontSize(9).setFont("helvetica", "italic").setTextColor(100).text(`Dicetak pada: ${fullDateStr}`, 14, 53);
 
+      // 3. Tabel Data (Kategori & Jenis ditambahkan)
       const tableRows = filteredData.map((item, index) => [
         index + 1,
         new Date(item.tanggal_transaksi).toLocaleDateString('id-ID'),
@@ -144,43 +137,73 @@ export default function KasManager() {
         body: tableRows,
         startY: 58,
         theme: 'grid',
-        headStyles: { fillColor: [30, 64, 175], fontSize: 9, halign: 'center', fontStyle: 'bold' },
+        headStyles: { 
+            fillColor: [30, 64, 175], 
+            fontSize: 9, 
+            halign: 'center',
+            fontStyle: 'bold' 
+        },
         bodyStyles: { fontSize: 8, valign: 'middle' },
-        columnStyles: { 0: { halign: 'center' }, 3: { halign: 'center' }, 6: { halign: 'right' } },
-        didParseCell: (data) => {
-          if (data.column.index === 3 && data.cell.section === 'body') {
-            if (data.cell.raw === 'MASUK') data.cell.styles.textColor = [16, 185, 129];
-            if (data.cell.raw === 'KELUAR') data.cell.styles.textColor = [239, 68, 68];
-          }
+        columnStyles: { 
+            0: { halign: 'center', cellWidth: 8 },
+            1: { halign: 'center', cellWidth: 22 },
+            3: { halign: 'center', fontStyle: 'bold' },
+            5: { halign: 'center', cellWidth: 12 },
+            6: { halign: 'right', fontStyle: 'bold' }
+        },
+        didParseCell: function(data) {
+            // Memberi warna pada teks jenis transaksi
+            if (data.column.index === 3 && data.cell.section === 'body') {
+                if (data.cell.raw === 'MASUK') data.cell.styles.textColor = [16, 185, 129];
+                if (data.cell.raw === 'KELUAR') data.cell.styles.textColor = [239, 68, 68];
+            }
         }
       });
 
+      // 4. Ringkasan (Summary)
       const finalY = (doc as any).lastAutoTable.finalY + 10;
       doc.setFontSize(10).setFont("helvetica", "bold");
-      doc.text(`TOTAL PEMASUKAN`, 130, finalY);
+      
+      doc.setTextColor(0).text(`TOTAL PEMASUKAN`, 130, finalY);
       doc.text(`: Rp ${stats.masuk.toLocaleString()}`, 196, finalY, { align: 'right' });
+      
       doc.text(`TOTAL PENGELUARAN`, 130, finalY + 6);
       doc.text(`: Rp ${stats.keluar.toLocaleString()}`, 196, finalY + 6, { align: 'right' });
+      
       doc.setTextColor(30, 64, 175).text(`SURPLUS / DEFISIT`, 130, finalY + 12);
       doc.text(`: Rp ${(stats.masuk - stats.keluar).toLocaleString()}`, 196, finalY + 12, { align: 'right' });
 
+      // 5. Tanda Tangan
       const signY = finalY + 30;
       doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(0);
       doc.text(`Parepare, ${locationDate}`, 150, signY - 7); 
-      doc.text('Mengetahui, Ketua PB. Bili Bili 162,', 14, signY + 7);
+      doc.text('Mengetahui,', 14, signY);
+      
+      doc.setFont("helvetica", "bold").text('Ketua PB. Bili Bili 162,', 14, signY + 7);
       doc.text('H. WAWAN', 14, signY + 35);
-      doc.text('Bendahara,', 150, signY + 7);
+      doc.setDrawColor(200).setLineWidth(0.2).line(14, signY + 36, 60, signY + 36); 
+
+      doc.setFont("helvetica", "bold").text('Bendahara,', 150, signY + 7);
       doc.text('MUH. NUR', 150, signY + 35);
+      doc.setDrawColor(200).setLineWidth(0.2).line(150, signY + 36, 196, signY + 36); 
 
       doc.save(`Laporan_Kas_PB162_${startDate}_${endDate}.pdf`);
-    } catch (error) { alert("Gagal membuat PDF"); }
+    } catch (error) { 
+        console.error(error);
+        alert("Gagal membuat PDF"); 
+    }
   };
 
   useEffect(() => {
     if (formData.kategori === 'Pembayaran Shuttlecock' && formData.jenis_transaksi === 'Masuk') {
       const hargaPerBola = formData.tipe_anggota === 'Anggota Tetap' ? 4000 : 5000;
       const total = (formData.jumlah_bola || 0) * hargaPerBola;
-      if (formData.jumlah_bayar !== total) setFormData(prev => ({ ...prev, jumlah_bayar: total }));
+      if (formData.jumlah_bayar !== total) {
+        setFormData(prev => ({ ...prev, jumlah_bayar: total }));
+      }
+    }
+    if (DAFTAR_PEMASUKAN.includes(formData.kategori) && formData.jenis_transaksi !== 'Masuk') {
+      setFormData(prev => ({ ...prev, jenis_transaksi: 'Masuk' }));
     }
   }, [formData.jumlah_bola, formData.tipe_anggota, formData.kategori, formData.jenis_transaksi]);
 
@@ -226,7 +249,7 @@ export default function KasManager() {
 
   return (
     <div className="p-6 lg:p-10 bg-[#050505] min-h-screen text-white font-sans">
-      {/* Header & Stats */}
+      {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
         <div>
           <div className="flex items-center gap-3 mb-2">
@@ -248,6 +271,7 @@ export default function KasManager() {
         </div>
       </div>
 
+      {/* Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
         <div className="bg-emerald-500/10 border border-emerald-500/20 p-6 rounded-[2rem]">
           <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2 flex items-center gap-2"><ArrowUpCircle size={14}/> Pemasukan</p>
@@ -264,7 +288,6 @@ export default function KasManager() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Form Column */}
         <div className="lg:col-span-4">
           <div className="bg-white/[0.03] border border-white/5 p-8 rounded-[2.5rem] sticky top-10">
             <h3 className="text-blue-400 font-black italic uppercase tracking-tighter text-xl mb-6 flex items-center gap-2">
@@ -301,22 +324,19 @@ export default function KasManager() {
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Nominal (Rp)</label>
                 <input type="number" className="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none font-bold text-blue-400" value={formData.jumlah_bayar} onChange={(e) => setFormData({...formData, jumlah_bayar: parseInt(e.target.value) || 0})} />
               </div>
-              <button type="submit" disabled={saving} className={`w-full ${formData.jenis_transaksi === 'Masuk' ? 'bg-blue-600' : 'bg-red-600'} text-white font-black uppercase text-xs py-5 rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95`}>
+              <button type="submit" disabled={saving} className={`w-full ${formData.jenis_transaksi === 'Masuk' ? 'bg-blue-600' : 'bg-red-600'} text-white font-black uppercase text-xs py-5 rounded-2xl flex items-center justify-center gap-2`}>
                 {saving ? <Loader2 className="animate-spin" size={18} /> : (editingId ? 'Update Data' : 'Simpan Transaksi')}
               </button>
             </form>
           </div>
         </div>
 
-        {/* Table Column with Pagination */}
         <div className="lg:col-span-8">
-          <div className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] overflow-hidden flex flex-col h-full">
+          <div className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] overflow-hidden">
             <div className="p-6 border-b border-white/5 flex items-center justify-between">
               <h3 className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">History_Transactions.log</h3>
-              <span className="text-[10px] text-zinc-500 font-bold uppercase">{filteredData.length} Total Entri</span>
             </div>
-            
-            <div className="flex-1 overflow-x-auto">
+            <div className="overflow-x-auto">
               <table className="w-full text-left">
                 <thead>
                   <tr className="text-[10px] font-black uppercase tracking-widest text-slate-500 border-b border-white/5">
@@ -329,26 +349,24 @@ export default function KasManager() {
                 <tbody className="divide-y divide-white/5">
                   {loading ? (
                     <tr><td colSpan={4} className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-500" /></td></tr>
-                  ) : currentItems.length === 0 ? (
-                    <tr><td colSpan={4} className="p-20 text-center text-slate-600 text-xs uppercase font-bold tracking-widest">Tidak ada data</td></tr>
-                  ) : currentItems.map((item) => (
+                  ) : filteredData.map((item) => (
                     <tr key={item.id} className="hover:bg-white/[0.02] transition-colors group">
                       <td className="p-6">
-                        <p className="font-bold text-sm text-white uppercase truncate max-w-[150px] md:max-w-none">{item.nama_pembayar}</p>
+                        <p className="font-bold text-sm text-white uppercase">{item.nama_pembayar}</p>
                         <p className="text-[9px] text-slate-500 uppercase">{item.tanggal_transaksi} • {item.jenis_transaksi}</p>
                       </td>
                       <td className="p-6">
-                        <span className={`px-3 py-1 rounded-full text-[8px] md:text-[9px] font-black uppercase border ${item.jenis_transaksi === 'Masuk' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
+                        <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${item.jenis_transaksi === 'Masuk' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20'}`}>
                           {item.kategori}
                         </span>
                       </td>
-                      <td className={`p-6 text-right font-black italic text-base md:text-lg ${item.jenis_transaksi === 'Masuk' ? 'text-emerald-400' : 'text-red-400'}`}>
+                      <td className={`p-6 text-right font-black italic text-lg ${item.jenis_transaksi === 'Masuk' ? 'text-emerald-400' : 'text-red-400'}`}>
                         Rp {item.jumlah_bayar.toLocaleString()}
                       </td>
                       <td className="p-6">
                         <div className="flex justify-center gap-2">
-                          <button onClick={() => handleEdit(item)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500 hover:text-white transition-all"><Edit3 size={14}/></button>
-                          <button onClick={async () => { if(confirm("Hapus?")) { await supabase.from('kas_pb').delete().eq('id', item.id); fetchData(); } }} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white transition-all"><Trash2 size={14}/></button>
+                          <button onClick={() => handleEdit(item)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg"><Edit3 size={14}/></button>
+                          <button onClick={async () => { if(confirm("Hapus?")) { await supabase.from('kas_pb').delete().eq('id', item.id); fetchData(); } }} className="p-2 bg-red-500/10 text-red-400 rounded-lg"><Trash2 size={14}/></button>
                         </div>
                       </td>
                     </tr>
@@ -356,31 +374,6 @@ export default function KasManager() {
                 </tbody>
               </table>
             </div>
-
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <div className="p-6 border-t border-white/5 flex items-center justify-between bg-black/20">
-                <p className="text-[10px] font-bold text-slate-500 uppercase">
-                  Halaman {currentPage} dari {totalPages}
-                </p>
-                <div className="flex gap-2">
-                  <button 
-                    disabled={currentPage === 1}
-                    onClick={() => setCurrentPage(prev => prev - 1)}
-                    className="p-2 border border-white/10 rounded-lg disabled:opacity-30 hover:bg-white/5 transition-all"
-                  >
-                    <ChevronLeft size={16} />
-                  </button>
-                  <button 
-                    disabled={currentPage === totalPages}
-                    onClick={() => setCurrentPage(prev => prev + 1)}
-                    className="p-2 border border-white/10 rounded-lg disabled:opacity-30 hover:bg-white/5 transition-all"
-                  >
-                    <ChevronRight size={16} />
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
