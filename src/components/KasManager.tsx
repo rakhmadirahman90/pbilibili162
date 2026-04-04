@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase';
 import { 
   Wallet, Plus, Search, FileText, Loader2, CheckCircle2, Filter, 
@@ -9,7 +9,6 @@ import autoTable from 'jspdf-autotable';
 
 const PB_LOGO_URL = "https://hykrsqsznmrtszhfywjz.supabase.co/storage/v1/object/public/assets/logo1.png";
 
-// DAFTAR KATEGORI YANG WAJIB MASUK/HIJAU
 const DAFTAR_PEMASUKAN = [
   'Iuran Bulanan Tetap (10k)',
   'Pembayaran Iuran Binaan',
@@ -61,7 +60,6 @@ export default function KasManager() {
 
   const [formData, setFormData] = useState(initialForm);
 
-  // --- 1. NORMALISASI DATA ---
   const normalizedData = kasData.map(item => ({
     ...item,
     jenis_transaksi: DAFTAR_PEMASUKAN.includes(item.kategori) ? ('Masuk' as const) : item.jenis_transaksi
@@ -100,12 +98,10 @@ export default function KasManager() {
     });
   };
 
-  // --- FUNGSI EXPORT PDF DENGAN TANGGAL DI BAWAH SUBTOTAL ---
   const exportToPDF = async () => {
     try {
       const doc = new jsPDF();
       const fullDateStr = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      // Format tanggal untuk lokasi (Contoh: 28 Maret 2026)
       const locationDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
       try {
@@ -139,28 +135,21 @@ export default function KasManager() {
         columnStyles: { 4: { halign: 'right' } }
       });
 
-      // Menghitung posisi akhir tabel
       const finalY = (doc as any).lastAutoTable.finalY + 10;
       doc.setFontSize(10).setFont("helvetica", "bold");
       doc.setTextColor(0).text(`TOTAL PEMASUKAN: Rp ${stats.masuk.toLocaleString()}`, 192, finalY, { align: 'right' });
       doc.text(`TOTAL PENGELUARAN: Rp ${stats.keluar.toLocaleString()}`, 192, finalY + 6, { align: 'right' });
       doc.setTextColor(30, 64, 175).text(`SUBTOTAL PERIODE: Rp ${(stats.masuk - stats.keluar).toLocaleString()}`, 192, finalY + 12, { align: 'right' });
 
-      // --- BAGIAN TANDA TANGAN ---
       const signY = finalY + 30;
-      
-      // Menambahkan Baris Tanggal di Atas Tanda Tangan (Sisi Kanan)
       doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(0);
       doc.text(`Parepare, ${locationDate}`, 150, signY - 7); 
-      
       doc.text('Mengetahui,', 14, signY);
       
-      // Ketua
       doc.setFont("helvetica", "bold").text('Ketua PB. Bili Bili 162,', 14, signY + 7);
       doc.text('H. WAWAN', 14, signY + 31);
       doc.setDrawColor(30, 64, 175).setLineWidth(0.5).line(14, signY + 32, 60, signY + 32); 
 
-      // Bendahara
       doc.setFont("helvetica", "bold").text('Bendahara,', 150, signY + 7);
       doc.text('MUH. NUR', 150, signY + 31);
       doc.setDrawColor(30, 64, 175).setLineWidth(0.5).line(150, signY + 32, 196, signY + 32); 
@@ -183,16 +172,37 @@ export default function KasManager() {
     }
   }, [formData.jumlah_bola, formData.tipe_anggota, formData.kategori, formData.jenis_transaksi]);
 
+  // --- PERBAIKAN UTAMA: Fetch Atlet dari Pendaftaran & Atlet_Stats (Full 68+ Data) ---
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [kasRes, atletRes] = await Promise.all([
+      const [kasRes, pendaftaranRes] = await Promise.all([
         supabase.from('kas_pb').select('*').order('tanggal_transaksi', { ascending: false }),
-        supabase.from('atlet_stats').select('id, player_name').order('player_name', { ascending: true })
+        // Mengambil master data dari pendaftaran untuk memastikan semua atlet muncul
+        supabase.from('pendaftaran').select(`
+          id,
+          nama,
+          atlet_stats (
+            player_name
+          )
+        `).order('nama', { ascending: true })
       ]);
+
       setKasData(kasRes.data || []);
-      setAtlets(atletRes.data || []);
-    } catch (error) { console.error(error); } finally { setLoading(false); }
+
+      if (pendaftaranRes.data) {
+        const formattedAtlets = pendaftaranRes.data.map(item => ({
+          id: item.id,
+          // Gunakan nama dari pendaftaran, jika kosong gunakan dari stats
+          player_name: item.nama || (Array.isArray(item.atlet_stats) ? item.atlet_stats[0]?.player_name : (item.atlet_stats as any)?.player_name) || 'Unknown'
+        }));
+        setAtlets(formattedAtlets);
+      }
+    } catch (error) { 
+      console.error("Fetch Error:", error); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -223,7 +233,6 @@ export default function KasManager() {
 
   return (
     <div className="p-6 lg:p-10 bg-[#050505] min-h-screen text-white font-sans">
-      {/* HEADER */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
         <div>
           <div className="flex items-center gap-3 mb-2">
@@ -243,7 +252,6 @@ export default function KasManager() {
         </div>
       </div>
 
-      {/* DASHBOARD STATS */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
         <div className="bg-emerald-500/10 border border-emerald-500/20 p-6 rounded-[2rem]">
           <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2 flex items-center gap-2"><ArrowUpCircle size={14}/> Total Masuk (Periode)</p>
@@ -306,7 +314,7 @@ export default function KasManager() {
                 <input type="date" required className="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none" value={formData.tanggal_transaksi} onChange={(e) => setFormData({...formData, tanggal_transaksi: e.target.value})} />
               </div>
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Nama / Keterangan</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Nama / Keterangan ({atlets.length} Atlet Terdeteksi)</label>
                 {formData.jenis_transaksi === 'Masuk' ? (
                   <select required className="w-full bg-black border border-white/10 rounded-xl p-4 text-sm outline-none" value={formData.nama_pembayar} onChange={(e) => setFormData({...formData, nama_pembayar: e.target.value})}>
                     <option value="">Pilih Atlet...</option>
@@ -334,7 +342,10 @@ export default function KasManager() {
           <div className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] overflow-hidden">
             <div className="p-6 border-b border-white/5 flex items-center justify-between">
               <h3 className="text-xs font-black uppercase tracking-[0.3em] text-slate-500">Transaction_Ledger.log</h3>
-              <Search size={16} className="text-slate-500" />
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-zinc-600 font-bold uppercase italic">Master Data: {atlets.length} Atlet</span>
+                <Search size={16} className="text-slate-500" />
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
