@@ -35,12 +35,11 @@ const AdminMatch: React.FC = () => {
     { id: 'Eksternal', label: 'Turnamen Eksternal', points: '500/--/100' },
   ];
 
-  // --- PERBAIKAN: Memastikan 68+ Atlet Muncul (Full Data Fetch) ---
+  // --- PERBAIKAN 1: Fetch Data dengan Range Pasti & Tanpa Cache ---
   const fetchPlayers = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Menghapus filter terselubung dengan mengambil data atlet_stats secara mandiri terlebih dahulu
-      const { data, error } = await supabase
+      const { data, error, count } = await supabase
         .from('atlet_stats')
         .select(`
           pendaftaran_id,
@@ -49,8 +48,9 @@ const AdminMatch: React.FC = () => {
           total_points,
           seed,
           pendaftaran ( kategori )
-        `)
-        .order('player_name', { ascending: true }); // Diurutkan abjad agar mudah dicari di dropdown
+        `, { count: 'exact' }) // Meminta count asli dari DB
+        .order('player_name', { ascending: true })
+        .range(0, 999); // Memastikan mengambil hingga 1000 baris jika ada
       
       if (error) throw error;
       
@@ -66,6 +66,8 @@ const AdminMatch: React.FC = () => {
           };
         });
         setPlayers(formattedPlayers);
+        // Console log untuk debugging jika jumlah masih tidak sesuai
+        console.log("Fetched Players Count:", formattedPlayers.length, "DB Count:", count);
       }
     } catch (err: any) {
       console.error("Gagal mengambil data ranking:", err.message);
@@ -96,19 +98,16 @@ const AdminMatch: React.FC = () => {
     }
   }, []);
 
-  // --- PERBAIKAN: Realtime Subscription Lengkap (Insert, Update, Delete) ---
   useEffect(() => {
     fetchPlayers();
     fetchRecentMatches();
 
     const channel = supabase
       .channel('admin_full_sync')
-      // Monitor jika ada pertandingan baru
       .on('postgres_changes', { event: '*', table: 'pertandingan', schema: 'public' }, () => {
           fetchRecentMatches();
           fetchPlayers(); 
       })
-      // Monitor jika ada atlet baru masuk (INSERT) atau diubah (UPDATE) di atlet_stats
       .on('postgres_changes', { event: '*', table: 'atlet_stats', schema: 'public' }, () => {
           fetchPlayers(); 
       })
@@ -117,8 +116,9 @@ const AdminMatch: React.FC = () => {
     return () => { supabase.removeChannel(channel); };
   }, [fetchPlayers, fetchRecentMatches]);
 
+  // --- PERBAIKAN 2: Recalculate dengan Refresh State Total ---
   const recalculateAllPoints = async () => {
-    if (!window.confirm("Hitung ulang seluruh poin berdasarkan riwayat?")) return;
+    if (!window.confirm("Hitung ulang seluruh poin berdasarkan riwayat untuk SEMUA atlet?")) return;
     setIsRecalculating(true);
     try {
       const { data: allMatches } = await supabase.from('pertandingan').select('*');
@@ -137,8 +137,10 @@ const AdminMatch: React.FC = () => {
       });
 
       await Promise.all(updatePromises);
-      alert("Database 68 Atlet Berhasil Disinkronkan!");
-      fetchPlayers();
+      
+      // Force refresh data ke state
+      await fetchPlayers();
+      alert(`Database ${allStats.length} Atlet Berhasil Disinkronkan!`);
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
@@ -174,7 +176,6 @@ const AdminMatch: React.FC = () => {
 
       const existingTotalPoints = stats.total_points || 0;
       const basePoints = stats.points || 0;
-      
       const newTotalPoints = Math.max(0, existingTotalPoints + pointsToAdd);
       
       const { error: updateError } = await supabase
@@ -245,7 +246,6 @@ const AdminMatch: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#050505] text-white p-6 md:p-12 font-sans relative overflow-hidden">
-      {/* Background Glow */}
       <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600/10 blur-[120px] rounded-full -z-10" />
       
       <div className="max-w-5xl mx-auto relative z-10">
@@ -265,6 +265,7 @@ const AdminMatch: React.FC = () => {
           <div className="flex gap-3">
              <div className="flex flex-col items-end mr-4">
                 <span className="text-[9px] text-zinc-500 font-black uppercase tracking-widest">Total Database</span>
+                {/* Menampilkan jumlah real-time dari state players */}
                 <span className="text-xl font-black italic text-white">{players.length} <span className="text-[10px] text-blue-500">ATLET</span></span>
              </div>
              <button onClick={recalculateAllPoints} disabled={isRecalculating}
@@ -364,7 +365,6 @@ const AdminMatch: React.FC = () => {
               </form>
             </div>
 
-            {/* Activity Log */}
             <div className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem]">
               <h3 className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-6">
                 <Clock size={14} /> Activity Log
@@ -393,7 +393,6 @@ const AdminMatch: React.FC = () => {
             </div>
           </div>
 
-          {/* Matrix Config Column */}
           <div className="space-y-6">
             <div className="bg-zinc-900 border border-white/10 p-8 rounded-[2.5rem]">
               <h3 className="text-[10px] font-black uppercase text-blue-500 mb-6 flex items-center gap-2">
@@ -412,7 +411,6 @@ const AdminMatch: React.FC = () => {
         </div>
       </div>
 
-      {/* Success Notif */}
       <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] transition-all duration-700 ${showSuccess ? 'translate-y-0 opacity-100' : 'translate-y-24 opacity-0 pointer-events-none'}`}>
         <div className="bg-zinc-950 border border-emerald-500/50 px-10 py-6 rounded-[3rem] flex items-center gap-6 shadow-2xl">
           <div className="bg-emerald-600 p-3 rounded-xl"><CheckCircle2 size={24} className="text-white" /></div>
