@@ -35,39 +35,42 @@ const AdminMatch: React.FC = () => {
     { id: 'Eksternal', label: 'Turnamen Eksternal', points: '500/--/100' },
   ];
 
-  // --- PERBAIKAN 1: Fetch Data dengan Range Pasti & Tanpa Cache ---
+  // --- PERBAIKAN 1: Fetch dari Pendaftaran (Master Data) agar muncul 68+ Atlet ---
   const fetchPlayers = useCallback(async () => {
     setIsLoading(true);
     try {
-      const { data, error, count } = await supabase
-        .from('atlet_stats')
+      const { data, error } = await supabase
+        .from('pendaftaran')
         .select(`
-          pendaftaran_id,
-          player_name,
-          points,
-          total_points,
-          seed,
-          pendaftaran ( kategori )
-        `, { count: 'exact' }) // Meminta count asli dari DB
-        .order('player_name', { ascending: true })
-        .range(0, 999); // Memastikan mengambil hingga 1000 baris jika ada
+          id,
+          nama,
+          kategori,
+          atlet_stats (
+            points,
+            total_points,
+            seed
+          )
+        `)
+        .order('nama', { ascending: true })
+        .range(0, 199); // Bypass default limit
       
       if (error) throw error;
       
       if (data) {
         const formattedPlayers = data.map(item => {
-          const basePoints = item.points || 0;
-          const additionalPoints = item.total_points || 0;
+          // Handle Join Result
+          const stats = Array.isArray(item.atlet_stats) ? item.atlet_stats[0] : item.atlet_stats;
+          const basePoints = stats?.points || 0;
+          const additionalPoints = stats?.total_points || 0;
+          
           return {
-            id: item.pendaftaran_id,
-            nama: item.player_name || 'Tanpa Nama',
+            id: item.id,
+            nama: item.nama || 'Tanpa Nama',
             total_points: basePoints + additionalPoints,
-            kategori: (item.pendaftaran as any)?.kategori || item.seed || 'Umum'
+            kategori: item.kategori || stats?.seed || 'Umum'
           };
         });
         setPlayers(formattedPlayers);
-        // Console log untuk debugging jika jumlah masih tidak sesuai
-        console.log("Fetched Players Count:", formattedPlayers.length, "DB Count:", count);
       }
     } catch (err: any) {
       console.error("Gagal mengambil data ranking:", err.message);
@@ -111,12 +114,14 @@ const AdminMatch: React.FC = () => {
       .on('postgres_changes', { event: '*', table: 'atlet_stats', schema: 'public' }, () => {
           fetchPlayers(); 
       })
+      .on('postgres_changes', { event: '*', table: 'pendaftaran', schema: 'public' }, () => {
+          fetchPlayers(); 
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, [fetchPlayers, fetchRecentMatches]);
 
-  // --- PERBAIKAN 2: Recalculate dengan Refresh State Total ---
   const recalculateAllPoints = async () => {
     if (!window.confirm("Hitung ulang seluruh poin berdasarkan riwayat untuk SEMUA atlet?")) return;
     setIsRecalculating(true);
@@ -137,8 +142,6 @@ const AdminMatch: React.FC = () => {
       });
 
       await Promise.all(updatePromises);
-      
-      // Force refresh data ke state
       await fetchPlayers();
       alert(`Database ${allStats.length} Atlet Berhasil Disinkronkan!`);
     } catch (err: any) {
@@ -164,6 +167,7 @@ const AdminMatch: React.FC = () => {
     } catch (err) { console.error(err); }
   };
 
+  // --- PERBAIKAN 2: Sinkronisasi Pintar (Handle Atlet Baru yang Belum Ada di Stats) ---
   const syncPlayerPerformance = async (playerId: string, pointsToAdd: number, currentKategori: string, currentHasil: string) => {
     try {
       const { data: stats } = await supabase
@@ -172,25 +176,51 @@ const AdminMatch: React.FC = () => {
         .eq('pendaftaran_id', playerId)
         .maybeSingle();
 
-      if (!stats) throw new Error("Data atlet tidak ditemukan di tabel stats.");
+      let playerName = "";
+      let existingTotalPoints = 0;
+      let basePoints = 0;
 
-      const existingTotalPoints = stats.total_points || 0;
-      const basePoints = stats.points || 0;
-      const newTotalPoints = Math.max(0, existingTotalPoints + pointsToAdd);
-      
-      const { error: updateError } = await supabase
-        .from('atlet_stats')
-        .update({
-          total_points: newTotalPoints,
-          last_match_at: new Date().toISOString()
-        })
-        .eq('pendaftaran_id', playerId);
+      if (!stats) {
+        // Jika atlet belum ada di tabel statistik, ambil namanya dulu
+        const { data: pendaftar } = await supabase
+          .from('pendaftaran')
+          .select('nama')
+          .eq('id', playerId)
+          .single();
+        
+        playerName = pendaftar?.nama || "Unknown";
+        
+        // Buat record baru di atlet_stats
+        const { error: insErr } = await supabase
+          .from('atlet_stats')
+          .insert([{
+            pendaftaran_id: playerId,
+            player_name: playerName,
+            total_points: Math.max(0, pointsToAdd),
+            last_match_at: new Date().toISOString()
+          }]);
+        if (insErr) throw insErr;
+      } else {
+        playerName = stats.player_name;
+        existingTotalPoints = stats.total_points || 0;
+        basePoints = stats.points || 0;
+        const newTotalPoints = Math.max(0, existingTotalPoints + pointsToAdd);
+        
+        const { error: updateError } = await supabase
+          .from('atlet_stats')
+          .update({
+            total_points: newTotalPoints,
+            last_match_at: new Date().toISOString()
+          })
+          .eq('pendaftaran_id', playerId);
 
-      if (updateError) throw updateError;
+        if (updateError) throw updateError;
+      }
 
-      await createAuditLog(playerId, stats.player_name, pointsToAdd, (basePoints + existingTotalPoints), (basePoints + newTotalPoints), currentKategori, currentHasil);
+      await createAuditLog(playerId, playerName, pointsToAdd, (basePoints + existingTotalPoints), (basePoints + existingTotalPoints + pointsToAdd), currentKategori, currentHasil);
       return true;
     } catch (err: any) {
+      console.error(err);
       return false;
     }
   };
@@ -265,7 +295,6 @@ const AdminMatch: React.FC = () => {
           <div className="flex gap-3">
              <div className="flex flex-col items-end mr-4">
                 <span className="text-[9px] text-zinc-500 font-black uppercase tracking-widest">Total Database</span>
-                {/* Menampilkan jumlah real-time dari state players */}
                 <span className="text-xl font-black italic text-white">{players.length} <span className="text-[10px] text-blue-500">ATLET</span></span>
              </div>
              <button onClick={recalculateAllPoints} disabled={isRecalculating}
@@ -289,7 +318,7 @@ const AdminMatch: React.FC = () => {
                     <ShieldCheck className="text-blue-500" size={24} />
                     <div>
                         <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Database Integrity Verified</p>
-                        <p className="text-[10px] text-zinc-500 font-bold leading-tight">Menampilkan {players.length} atlet terdaftar dari database.</p>
+                        <p className="text-[10px] text-zinc-500 font-bold leading-tight">Menampilkan {players.length} atlet terdaftar dari master data pendaftaran.</p>
                     </div>
                 </div>
 
