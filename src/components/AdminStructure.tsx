@@ -128,7 +128,6 @@ export default function AdminStructure() {
     }
   };
 
-  // Cleaner dimatikan karena domain pbus162.com mati
   const runCleaner = () => {
     setToast({ msg: 'FITUR CLEANER PHP NONAKTIF (DOMAIN EXPIRED)', type: 'error' });
   };
@@ -148,7 +147,7 @@ export default function AdminStructure() {
 
   const onCropComplete = useCallback((_: any, pixels: any) => { setCroppedAreaPixels(pixels); }, []);
 
-  // --- FIX: MENGGUNAKAN SUPABASE STORAGE SEBAGAI PENGGANTI PHP ---
+  // --- PERBAIKAN: HANDLE UPLOAD DENGAN CACHE BUSTER ---
   const handleProcessImage = async () => {
     if (!imageSrc || !croppedAreaPixels) return;
     setUploading(true);
@@ -181,7 +180,6 @@ export default function AdminStructure() {
       
       const fileName = `branding/member_${Date.now()}.jpg`;
 
-      // Upload ke Supabase Storage (Bucket: assets)
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('assets')
         .upload(fileName, blob, {
@@ -191,14 +189,20 @@ export default function AdminStructure() {
 
       if (uploadError) throw uploadError;
 
-      // Ambil URL Publik
       const { data: publicUrlData } = supabase.storage
         .from('assets')
         .getPublicUrl(fileName);
       
-      const finalUrl = publicUrlData.publicUrl;
+      // PERBAIKAN: Tambahkan timestamp (?t=...) agar browser tidak menampilkan cache foto lama
+      const finalUrlWithCacheBust = `${publicUrlData.publicUrl}?t=${new Date().getTime()}`;
 
-      setFormData(prev => ({ ...prev, photo_url: finalUrl }));
+      setFormData(prev => ({ ...prev, photo_url: finalUrlWithCacheBust }));
+      
+      // Update juga di list members jika sedang mengedit agar Live Preview berubah seketika
+      if (editingId) {
+        setMembers(prev => prev.map(m => m.id === editingId ? { ...m, photo_url: finalUrlWithCacheBust } : m));
+      }
+
       setImageSrc(null);
       setToast({ msg: 'FOTO BERHASIL DIUPLOAD KE STORAGE', type: 'success' });
       
@@ -323,26 +327,33 @@ export default function AdminStructure() {
     return fields;
   }, [members]);
 
-  const MemberCard = ({ member, size = 'md' }: { member: any, size?: 'lg' | 'md' | 'sm' }) => (
-    <motion.div 
-      layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className={`bg-white rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.04)] border border-blue-50/50 flex flex-col items-center p-8 transition-all duration-500 hover:shadow-2xl ${size === 'lg' ? 'w-80' : 'w-72'}`}
-    >
-      <div className={`${size === 'lg' ? 'w-36 h-36' : 'w-28 h-28'} rounded-[2.2rem] overflow-hidden mb-6 bg-slate-50 border-[6px] border-white shadow-inner`}>
-        <img 
-          src={member.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=0D8ABC&color=fff`} 
-          className="w-full h-full object-cover" 
-          alt={member.name} 
-        />
-      </div>
-      <h3 className="text-slate-900 font-black italic uppercase text-center leading-tight tracking-tighter mb-3" style={{ fontSize: size === 'lg' ? '18px' : '15px' }}>{member.name}</h3>
-      <div className="bg-amber-500 px-5 py-2 rounded-full shadow-lg shadow-amber-500/20">
-        <span className="text-white font-black uppercase tracking-[0.15em]" style={{ fontSize: '9px' }}>{member.role}</span>
-      </div>
-    </motion.div>
-  );
+  // --- PERBAIKAN: KOMPONEN PREVIEW ---
+  const MemberCard = ({ member, size = 'md' }: { member: any, size?: 'lg' | 'md' | 'sm' }) => {
+    // Gunakan data dari formData jika ID-nya sama dengan yang sedang diedit untuk Real-Time Preview
+    const activeData = editingId === member.id ? { ...member, ...formData } : member;
+
+    return (
+      <motion.div 
+        layout
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className={`bg-white rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.04)] border border-blue-50/50 flex flex-col items-center p-8 transition-all duration-500 hover:shadow-2xl ${size === 'lg' ? 'w-80' : 'w-72'}`}
+      >
+        <div className={`${size === 'lg' ? 'w-36 h-36' : 'w-28 h-28'} rounded-[2.2rem] overflow-hidden mb-6 bg-slate-50 border-[6px] border-white shadow-inner`}>
+          <img 
+            key={activeData.photo_url} // Force re-render image tag when URL changes
+            src={activeData.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(activeData.name)}&background=0D8ABC&color=fff`} 
+            className="w-full h-full object-cover" 
+            alt={activeData.name} 
+          />
+        </div>
+        <h3 className="text-slate-900 font-black italic uppercase text-center leading-tight tracking-tighter mb-3" style={{ fontSize: size === 'lg' ? '18px' : '15px' }}>{activeData.name}</h3>
+        <div className="bg-amber-500 px-5 py-2 rounded-full shadow-lg shadow-amber-500/20">
+          <span className="text-white font-black uppercase tracking-[0.15em]" style={{ fontSize: '9px' }}>{activeData.role}</span>
+        </div>
+      </motion.div>
+    );
+  };
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-[#050505] text-white font-sans overflow-hidden">
@@ -469,6 +480,7 @@ export default function AdminStructure() {
                 onClick={() => {
                   setEditingId(null); 
                   setFormData({name:'', role:'', category:'Seksi', level:1, photo_url:''})
+                  fetchMembers(); // Reset list ke data asli DB
                 }} 
                 className="w-full py-2 text-[9px] font-black uppercase text-red-500 hover:text-red-400 transition-colors"
               >
@@ -612,14 +624,15 @@ export default function AdminStructure() {
                               <motion.div layout key={m.id} className="bg-white p-4 rounded-[1.8rem] shadow-sm border border-slate-100 flex items-center gap-4 w-72 hover:shadow-md transition-all hover:-translate-y-1">
                                 <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-50 border-2 border-white shadow-sm shrink-0">
                                   <img 
-                                    src={m.photo_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.name)}`} 
+                                    key={editingId === m.id ? formData.photo_url : m.photo_url}
+                                    src={(editingId === m.id ? formData.photo_url : m.photo_url) || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.name)}`} 
                                     className="w-full h-full object-cover" 
                                     alt={m.name}
                                   />
                                 </div>
                                 <div className="flex flex-col min-w-0">
-                                  <h4 className="font-black text-slate-900 text-[11px] uppercase italic leading-tight truncate">{m.name}</h4>
-                                  <p className="text-blue-600 font-bold text-[8px] uppercase tracking-widest mt-1">{m.role}</p>
+                                  <h4 className="font-black text-slate-900 text-[11px] uppercase italic leading-tight truncate">{editingId === m.id ? formData.name : m.name}</h4>
+                                  <p className="text-blue-600 font-bold text-[8px] uppercase tracking-widest mt-1">{editingId === m.id ? formData.role : m.role}</p>
                                 </div>
                               </motion.div>
                             ))}
