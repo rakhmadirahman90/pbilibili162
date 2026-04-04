@@ -44,9 +44,9 @@ export default function KasManager() {
   const [atlets, setAtlets] = useState<Atlet[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   
-  // --- State Baru: Pagination ---
+  // --- State Pagination ---
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10; // Jumlah baris per halaman
+  const itemsPerPage = 10;
 
   const today = new Date().toISOString().split('T')[0];
   const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
@@ -75,13 +75,11 @@ export default function KasManager() {
     return item.tanggal_transaksi >= startDate && item.tanggal_transaksi <= endDate;
   });
 
-  // --- Logika Perhitungan Pagination ---
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
   const currentItems = filteredData.slice(indexOfFirstItem, indexOfLastItem);
 
-  // Reset ke halaman 1 jika filter tanggal berubah
   useEffect(() => {
     setCurrentPage(1);
   }, [startDate, endDate]);
@@ -115,61 +113,112 @@ export default function KasManager() {
     });
   };
 
+  // --- OPTIMASI EXPORT PDF ---
   const exportToPDF = async () => {
     try {
-      const doc = new jsPDF();
+      const doc = new jsPDF('p', 'mm', 'a4');
       const fullDateStr = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       const locationDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
+      // 1. Kop Surat & Logo
       try {
         const transparentLogo = await getTransparentImageData(PB_LOGO_URL);
-        doc.addImage(transparentLogo, 'PNG', 14, 10, 22, 22, undefined, 'FAST');
+        doc.addImage(transparentLogo, 'PNG', 15, 12, 25, 25);
       } catch (e) { 
         console.error("Logo gagal dimuat", e); 
       }
 
-      doc.setFontSize(20).setFont("helvetica", "bold").setTextColor(30, 64, 175).text('PB. BILI BILI 162', 42, 18);
-      doc.setFontSize(9).setFont("helvetica", "normal").setTextColor(100).text('Jl. Bili-Bili No. 162, Parepare, Sulawesi Selatan', 42, 24);
-      doc.text(`Periode Laporan: ${startDate} s/d ${endDate}`, 42, 29);
-      doc.setDrawColor(30, 64, 175).setLineWidth(0.8).line(14, 38, 196, 38);
+      // Header Text (Posisi diatur agar rapi di samping logo)
+      doc.setFont("helvetica", "bold").setFontSize(22).setTextColor(30, 64, 175);
+      doc.text('PB. BILI BILI 162', 45, 20);
+      
+      doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(80, 80, 80);
+      doc.text('Sekretariat: Jl. Bili-Bili No. 162, Kota Parepare, Sulawesi Selatan', 45, 26);
+      doc.text('Email: pbbilibili162@gmail.com | Mobile: +62 8XX XXXX XXXX', 45, 31);
+      
+      // Garis Pemisah (Double Line Effect)
+      doc.setDrawColor(30, 64, 175).setLineWidth(0.8).line(15, 40, 195, 40);
+      doc.setDrawColor(150, 150, 150).setLineWidth(0.2).line(15, 41.5, 195, 41.5);
 
-      doc.setFontSize(14).setFont("helvetica", "bold").setTextColor(0).text('LAPORAN PERTANGGUNGJAWABAN KAS', 14, 48);
-      doc.setFontSize(9).setFont("helvetica", "italic").setTextColor(100).text(`Dicetak pada: ${fullDateStr}`, 14, 53);
+      // 2. Judul Laporan & Periode
+      doc.setFont("helvetica", "bold").setFontSize(14).setTextColor(0);
+      doc.text('LAPORAN PERTANGGUNGJAWABAN KEUANGAN KAS', 105, 52, { align: 'center' });
+      
+      doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(100);
+      doc.text(`Periode: ${startDate} s/d ${endDate}`, 105, 58, { align: 'center' });
 
+      // 3. Data Tabel dengan Kolom "Jenis" dan "Kategori" Lengkap
       const tableRows = filteredData.map(item => [
         new Date(item.tanggal_transaksi).toLocaleDateString('id-ID'),
         item.nama_pembayar || '-',
+        item.jenis_transaksi,
         item.kategori,
-        item.jumlah_bola || '-',
-        `${item.jenis_transaksi === 'Masuk' ? '' : '-'} Rp ${item.jumlah_bayar.toLocaleString()}`
+        item.jumlah_bola > 0 ? `${item.jumlah_bola} Pcs` : '-',
+        `Rp ${item.jumlah_bayar.toLocaleString()}`
       ]);
 
       autoTable(doc, {
-        head: [["Tanggal", "Nama Member", "Kategori", "Bola", "Total Bayar"]],
+        head: [["Tanggal", "Member/Penerima", "Jenis", "Kategori", "Ket/Bola", "Nominal"]],
         body: tableRows,
-        startY: 58,
-        theme: 'grid',
-        headStyles: { fillColor: [30, 64, 175], fontSize: 10, halign: 'center' },
-        columnStyles: { 4: { halign: 'right' } }
+        startY: 65,
+        theme: 'striped',
+        headStyles: { fillColor: [30, 64, 175], textColor: 255, fontSize: 9, fontStyle: 'bold', halign: 'center' },
+        bodyStyles: { fontSize: 8, textColor: 50 },
+        columnStyles: {
+          0: { halign: 'center', cellWidth: 25 },
+          2: { halign: 'center', cellWidth: 20 },
+          4: { halign: 'center', cellWidth: 20 },
+          5: { halign: 'right', fontStyle: 'bold' }
+        },
+        didParseCell: (data) => {
+            // Warnai teks Masuk/Keluar
+            if (data.section === 'body' && data.column.index === 2) {
+                if (data.cell.raw === 'Masuk') data.cell.styles.textColor = [16, 185, 129];
+                if (data.cell.raw === 'Keluar') data.cell.styles.textColor = [239, 68, 68];
+            }
+        }
       });
 
+      // 4. Ringkasan Finansial (Summary Box)
       const finalY = (doc as any).lastAutoTable.finalY + 10;
-      doc.setFontSize(10).setFont("helvetica", "bold");
-      doc.setTextColor(0).text(`TOTAL PEMASUKAN: Rp ${stats.masuk.toLocaleString()}`, 192, finalY, { align: 'right' });
-      doc.text(`TOTAL PENGELUARAN: Rp ${stats.keluar.toLocaleString()}`, 192, finalY + 6, { align: 'right' });
-      doc.setTextColor(30, 64, 175).text(`SUBTOTAL PERIODE: Rp ${(stats.masuk - stats.keluar).toLocaleString()}`, 192, finalY + 12, { align: 'right' });
+      
+      // Kotak Ringkasan
+      doc.setDrawColor(230, 230, 230).setFillColor(248, 250, 252).roundedRect(120, finalY, 75, 30, 2, 2, 'FD');
+      
+      doc.setFontSize(9).setFont("helvetica", "bold").setTextColor(50);
+      doc.text(`Total Pemasukan:`, 125, finalY + 7);
+      doc.setTextColor(16, 185, 129).text(`Rp ${stats.masuk.toLocaleString()}`, 190, finalY + 7, { align: 'right' });
+      
+      doc.setTextColor(50).text(`Total Pengeluaran:`, 125, finalY + 14);
+      doc.setTextColor(239, 68, 68).text(`Rp ${stats.keluar.toLocaleString()}`, 190, finalY + 14, { align: 'right' });
+      
+      doc.setDrawColor(200).line(125, finalY + 18, 190, finalY + 18);
+      
+      doc.setTextColor(30, 64, 175).text(`Saldo Periode Ini:`, 125, finalY + 24);
+      doc.text(`Rp ${(stats.masuk - stats.keluar).toLocaleString()}`, 190, finalY + 24, { align: 'right' });
 
-      const signY = finalY + 30;
+      // 5. Tanda Tangan (Footer)
+      const signY = finalY + 50;
       doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(0);
-      doc.text(`Parepare, ${locationDate}`, 150, signY - 7); 
-      doc.text('Mengetahui, Ketua PB. Bili Bili 162,', 14, signY + 7);
-      doc.text('H. WAWAN', 14, signY + 31);
-      doc.text('Bendahara,', 150, signY + 7);
-      doc.text('MUH. NUR', 150, signY + 31);
+      doc.text(`Parepare, ${locationDate}`, 150, signY - 8); 
+      
+      doc.setFont("helvetica", "bold").text('Mengetahui,', 15, signY);
+      doc.text('Ketua PB. Bili Bili 162', 15, signY + 6);
+      doc.text('H. WAWAN', 15, signY + 32);
+      doc.setDrawColor(0).setLineWidth(0.3).line(15, signY + 33, 60, signY + 33);
 
-      doc.save(`Laporan_Kas_PB162_${startDate}_${endDate}.pdf`);
+      doc.text('Bendahara Umum,', 150, signY + 6);
+      doc.text('MUH. NUR', 150, signY + 32);
+      doc.line(150, signY + 33, 195, signY + 33);
+
+      // Metadata Footer
+      doc.setFontSize(8).setFont("helvetica", "italic").setTextColor(150);
+      doc.text(`* Dokumen ini digenerate secara otomatis melalui Treasury Master System pada ${fullDateStr}`, 15, 285);
+
+      doc.save(`LPJ_KAS_PB162_${startDate}_TO_${endDate}.pdf`);
     } catch (error) { 
-      alert("Gagal membuat PDF."); 
+      console.error(error);
+      alert("Terjadi kesalahan saat mengekspor PDF."); 
     }
   };
 
@@ -251,7 +300,7 @@ export default function KasManager() {
 
   return (
     <div className="p-6 lg:p-10 bg-[#050505] min-h-screen text-white font-sans">
-      {/* Header */}
+      {/* Header UI */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
         <div>
           <div className="flex items-center gap-3 mb-2">
@@ -367,7 +416,7 @@ export default function KasManager() {
           </div>
         </div>
 
-        {/* Ledger Section with Pagination */}
+        {/* Ledger Section */}
         <div className="lg:col-span-8">
           <div className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] overflow-hidden flex flex-col h-full">
             <div className="p-6 border-b border-white/5 flex items-center justify-between">
