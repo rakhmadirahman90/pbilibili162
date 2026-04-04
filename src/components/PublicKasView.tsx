@@ -61,15 +61,21 @@ export default function PublicKasView() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // Logika Filter & Normalisasi
+  // --- LOGIKA FILTER PENCARIAN & TANGGAL (DIPERBAIKI) ---
   const filteredData = kasData.filter(item => {
-    const isMasuk = DAFTAR_PEMASUKAN.includes(item.kategori) || item.jenis_transaksi === 'Masuk';
+    // 1. Filter Rentang Tanggal
     const matchDate = item.tanggal_transaksi >= startDate && item.tanggal_transaksi <= endDate;
-    const matchSearch = item.nama_pembayar.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                        item.kategori.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // 2. Filter Pencarian (Nama Atlet atau Kategori)
+    const searchLower = searchTerm.toLowerCase().trim();
+    const matchSearch = 
+      item.nama_pembayar.toLowerCase().includes(searchLower) || 
+      item.kategori.toLowerCase().includes(searchLower);
+
     return matchDate && matchSearch;
   }).map(item => ({
     ...item,
+    // Normalisasi jenis transaksi berdasarkan kategori tetap
     jenis_transaksi: (DAFTAR_PEMASUKAN.includes(item.kategori) ? 'Masuk' : item.jenis_transaksi) as 'Masuk' | 'Keluar'
   }));
 
@@ -106,8 +112,6 @@ export default function PublicKasView() {
   const exportToPDF = async () => {
     try {
       const doc = new jsPDF('p', 'mm', 'a4');
-
-      // Kop Surat
       try {
         const logo = await getTransparentImageData(PB_LOGO_URL);
         doc.addImage(logo, 'PNG', 15, 12, 22, 22);
@@ -120,7 +124,6 @@ export default function PublicKasView() {
       doc.text(`Periode: ${startDate} s/d ${endDate}`, 42, 31);
       doc.setDrawColor(30, 64, 175).setLineWidth(0.5).line(15, 38, 195, 38);
 
-      // Table (Sesuai format admin export)
       autoTable(doc, {
         startY: 45,
         head: [['Tanggal', 'Nama/Keterangan', 'Ket/Bola', 'Kategori', 'Tipe', 'Nominal']],
@@ -141,7 +144,6 @@ export default function PublicKasView() {
         styles: { fontSize: 8 }
       });
 
-      // Footer Summary
       const finalY = (doc as any).lastAutoTable.finalY + 10;
       doc.setFont("helvetica", "bold").text(`Total Masuk: Rp ${stats.masuk.toLocaleString()}`, 195, finalY, { align: 'right' });
       doc.text(`Total Keluar: Rp ${stats.keluar.toLocaleString()}`, 195, finalY + 7, { align: 'right' });
@@ -177,18 +179,21 @@ export default function PublicKasView() {
         </button>
       </div>
 
-      {/* Filter Section */}
+      {/* Filter Section (PENCARIAN DIPERBAIKI) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 shadow-inner">
         <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] px-1">Cari Mutasi</label>
+          <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] px-1">Cari Atlet / Kategori</label>
           <div className="relative">
             <Search className="absolute left-4 top-3.5 text-slate-400" size={20}/>
             <input 
               type="text" 
-              placeholder="Cari nama atau kategori..."
+              placeholder="Ketik nama atlet atau jenis kategori..."
               className="w-full pl-12 pr-4 py-3.5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-blue-100 outline-none transition-all font-bold text-sm bg-white"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // RESET KE HALAMAN 1 SAAT MENGETIK
+              }}
             />
           </div>
         </div>
@@ -198,7 +203,7 @@ export default function PublicKasView() {
             type="date" 
             className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 outline-none font-bold text-sm bg-white focus:ring-4 focus:ring-blue-100 transition-all"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
+            onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
           />
         </div>
         <div className="space-y-2">
@@ -207,7 +212,7 @@ export default function PublicKasView() {
             type="date" 
             className="w-full px-5 py-3.5 rounded-2xl border border-slate-200 outline-none font-bold text-sm bg-white focus:ring-4 focus:ring-blue-100 transition-all"
             value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
+            onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
           />
         </div>
       </div>
@@ -270,8 +275,8 @@ export default function PublicKasView() {
                       <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6">
                         <Search className="text-slate-300" size={32} />
                       </div>
-                      <p className="text-slate-900 font-black uppercase text-xs tracking-widest">Data Kosong</p>
-                      <p className="text-xs text-slate-400 mt-2">Tidak ditemukan transaksi pada filter ini.</p>
+                      <p className="text-slate-900 font-black uppercase text-xs tracking-widest">Data Kosong / Tidak Ditemukan</p>
+                      <p className="text-xs text-slate-400 mt-2">Coba periksa kembali ejaan nama atlet atau filter tanggal.</p>
                     </div>
                   </td>
                 </tr>
@@ -290,7 +295,6 @@ export default function PublicKasView() {
                         {item.nama_pembayar}
                       </p>
                     </td>
-                    {/* KOLOM KET / BOLA BARU */}
                     <td className="p-6 text-center">
                        {item.jumlah_bola > 0 ? (
                          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-700 rounded-xl border border-amber-100 shadow-sm">
