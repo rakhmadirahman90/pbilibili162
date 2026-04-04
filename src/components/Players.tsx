@@ -26,48 +26,46 @@ import {
 const Players: React.FC<{ initialFilter?: string }> = ({
   initialFilter = 'Semua',
 }) => {
-  const [currentAgeGroup, setCurrentAgeGroup] = useState(initialFilter);
+  /**
+   * PERBAIKAN 1: Normalisasi Nilai Filter
+   * Memastikan state awal selalu sinkron dengan opsi menu (Semua, Senior, Muda)
+   */
+  const normalizeFilter = (val: string) => {
+    if (!val || val.toLowerCase() === 'all' || val.toLowerCase() === 'semua') return 'Semua';
+    return val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
+  };
+
+  const [currentAgeGroup, setCurrentAgeGroup] = useState(normalizeFilter(initialFilter));
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPlayer, setSelectedPlayer] = useState<any | null>(null);
   const [dbPlayers, setDbPlayers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Swiper Navigation Refs
   const prevRef = useRef<HTMLButtonElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
   const [swiperLoaded, setSwiperLoaded] = useState(false);
 
-  /**
-   * FIX: Re-update Swiper Navigation
-   */
   useEffect(() => {
     if (!isLoading) {
       setSwiperLoaded(true);
     }
   }, [isLoading]);
 
-  /**
-   * FIX 1: Sinkronisasi currentAgeGroup dengan initialFilter prop
-   */
   useEffect(() => {
     if (initialFilter) {
-      const formatted =
-        initialFilter.charAt(0).toUpperCase() +
-        initialFilter.slice(1).toLowerCase();
-      setCurrentAgeGroup(formatted);
+      setCurrentAgeGroup(normalizeFilter(initialFilter));
     }
   }, [initialFilter]);
 
   /**
-   * Listener untuk menangkap event filter dari Navbar/App
+   * PERBAIKAN 2: Listener Event Filter
+   * Menangani input 'all' atau 'semua' dari event eksternal agar tidak error
    */
   useEffect(() => {
     const handleFilterEvent = (event: any) => {
       const category = event.detail;
       if (category) {
-        const formattedCategory =
-          category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
-        setCurrentAgeGroup(formattedCategory);
+        setCurrentAgeGroup(normalizeFilter(category));
       }
     };
 
@@ -91,8 +89,6 @@ const Players: React.FC<{ initialFilter?: string }> = ({
           )
         `
       );
-      // Kita tidak melakukan order di query karena points+total_points harus dihitung di client
-      // agar sortingnya akurat berdasarkan akumulasi terbaru.
 
       if (error) throw error;
       setDbPlayers(data || []);
@@ -126,7 +122,6 @@ const Players: React.FC<{ initialFilter?: string }> = ({
       const name = info.nama || 'Atlet PB US';
       const photo = info.foto_url || null;
 
-      // PERBAIKAN: Kalkulasi Total Poin (points + total_points)
       const calculatedPoints =
         (Number(p.points) || 0) + (Number(p.total_points) || 0);
 
@@ -134,9 +129,7 @@ const Players: React.FC<{ initialFilter?: string }> = ({
       let ageGroup = 'Senior';
 
       if (dbCategory) {
-        ageGroup =
-          dbCategory.charAt(0).toUpperCase() +
-          dbCategory.slice(1).toLowerCase();
+        ageGroup = normalizeFilter(dbCategory);
       } else {
         const categoryRaw = (info.kategori || '').toUpperCase();
         if (
@@ -154,7 +147,7 @@ const Players: React.FC<{ initialFilter?: string }> = ({
         name,
         img: photo,
         ageGroup,
-        displayPoints: calculatedPoints, // Menggunakan hasil penjumlahan
+        displayPoints: calculatedPoints,
         displaySeed: p.seed || 'UNSEEDED',
         bio:
           p.bio ||
@@ -162,7 +155,6 @@ const Players: React.FC<{ initialFilter?: string }> = ({
       };
     });
 
-    // Sorting berdasarkan akumulasi poin tertinggi
     return mapped.sort((a, b) => b.displayPoints - a.displayPoints);
   }, [dbPlayers]);
 
@@ -180,8 +172,12 @@ const Players: React.FC<{ initialFilter?: string }> = ({
       const matchesSearch = p.name
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
+      
+      // PERBAIKAN 3: Perbandingan Filter yang Fleksibel
       const matchesAge =
-        currentAgeGroup === 'Semua' || p.ageGroup === currentAgeGroup;
+        currentAgeGroup === 'Semua' || 
+        p.ageGroup === currentAgeGroup;
+
       return matchesSearch && matchesAge;
     });
   }, [searchTerm, currentAgeGroup, processedPlayers]);
@@ -362,22 +358,23 @@ const Players: React.FC<{ initialFilter?: string }> = ({
                 modules={[Navigation, Pagination, Autoplay]}
                 spaceBetween={25}
                 slidesPerView={1.2}
+                autoplay={{ delay: 3000, disableOnInteraction: false }}
                 navigation={{
                   prevEl: prevRef.current,
                   nextEl: nextRef.current,
                 }}
+                observer={true}
+                observeParents={true}
+                onBeforeInit={(swiper) => {
+                  // @ts-ignore
+                  swiper.params.navigation.prevEl = prevRef.current;
+                  // @ts-ignore
+                  swiper.params.navigation.nextEl = nextRef.current;
+                }}
                 onSwiper={(swiper) => {
                   setTimeout(() => {
-                    if (
-                      swiper.params.navigation &&
-                      typeof swiper.params.navigation !== 'boolean'
-                    ) {
-                      swiper.params.navigation.prevEl = prevRef.current;
-                      swiper.params.navigation.nextEl = nextRef.current;
-                      swiper.navigation.destroy();
-                      swiper.navigation.init();
-                      swiper.navigation.update();
-                    }
+                    swiper.navigation.init();
+                    swiper.navigation.update();
                   });
                 }}
                 breakpoints={{
@@ -431,8 +428,15 @@ const Players: React.FC<{ initialFilter?: string }> = ({
               <div className="py-32 text-center">
                 <Search className="mx-auto text-zinc-800 mb-4" size={48} />
                 <p className="text-zinc-600 font-black uppercase italic tracking-widest">
-                  Atlet "{searchTerm || currentAgeGroup}" tidak ditemukan
+                   {/* PERBAIKAN 4: Pesan dinamis tanpa embel-embel "All" */}
+                  Atlet tidak ditemukan dalam kategori ini
                 </p>
+                <button 
+                  onClick={() => {setCurrentAgeGroup('Semua'); setSearchTerm('');}}
+                  className="mt-4 px-6 py-2 bg-blue-600 rounded-full text-xs font-bold hover:bg-blue-700 transition-all"
+                >
+                  Lihat Semua Atlet
+                </button>
               </div>
             )}
 
