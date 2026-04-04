@@ -1,0 +1,640 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { supabase } from '../supabase';
+import {
+  Plus,
+  Trash2,
+  Edit3,
+  Save,
+  X,
+  Search,
+  Loader2,
+  User,
+  RefreshCw,
+  AlertCircle,
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Zap,
+} from 'lucide-react';
+
+// PERBAIKAN: Menyesuaikan Interface dengan kolom database yang digunakan (poin, bonus, total_points)
+interface Ranking {
+  id: string;
+  pendaftaran_id?: string;
+  player_name: string;
+  category: string;
+  seed: string;
+  total_points: number; // Hasil Akhir
+  bonus: number; // Sama dengan total_points di tabel atlet_stats
+  poin: number; // Sama dengan points di tabel atlet_stats (Base Points)
+  photo_url?: string;
+  updated_at?: string;
+}
+
+export default function AdminRanking() {
+  const [rankings, setRankings] = useState<Ranking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSeed, setSelectedSeed] = useState('Semua');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  const [formData, setFormData] = useState<Partial<Ranking>>({
+    player_name: '',
+    category: 'Senior',
+    seed: 'Seed A',
+    total_points: 0,
+    bonus: 0,
+    poin: 0, // Menggunakan properti 'poin'
+    photo_url: '',
+  });
+
+  // --- FUNGSI SINKRONISASI ---
+  const autoSyncData = useCallback(async () => {
+    try {
+      console.log('Memulai Sinkronisasi...');
+
+      const { data: statsData, error: statsError } = await supabase
+        .from('atlet_stats')
+        .select('pendaftaran_id, points, total_points, seed');
+
+      if (statsError) throw statsError;
+
+      const { data: pendaftaranData, error: pendaftaranError } = await supabase
+        .from('pendaftaran')
+        .select('id, nama, foto_url, kategori');
+
+      if (pendaftaranError) throw pendaftaranError;
+
+      const finalDataArray = (statsData || [])
+        .map((stat) => {
+          const profile = (pendaftaranData || []).find(
+            (p) => p.id === stat.pendaftaran_id
+          );
+
+          if (profile) {
+            const base = Number(stat.points) || 0;
+            const added = Number(stat.total_points) || 0;
+            const total = base + added;
+
+            return {
+              pendaftaran_id: profile.id,
+              player_name: profile.nama.trim().toUpperCase(),
+              category: profile.kategori || 'Senior',
+              seed: stat.seed || 'Non-Seed',
+              photo_url: profile.foto_url || null,
+              // PERBAIKAN: Mapping ke nama kolom database tabel 'rankings'
+              poin: base,
+              bonus: added,
+              total_points: total,
+              updated_at: new Date().toISOString(),
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+
+      if (finalDataArray.length > 0) {
+        const { error: upsertError } = await supabase
+          .from('rankings')
+          .upsert(finalDataArray, {
+            onConflict: 'player_name',
+            ignoreDuplicates: false,
+          });
+
+        if (upsertError) throw upsertError;
+        console.log('Data Berhasil Disinkronkan');
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      console.error('Sync Error:', err.message);
+      return false;
+    }
+  }, []);
+
+  const fetchRankings = useCallback(async () => {
+    setLoading(true);
+    try {
+      await autoSyncData();
+      const { data, error } = await supabase
+        .from('rankings')
+        .select('*')
+        .order('total_points', { ascending: false });
+
+      if (error) throw error;
+      setRankings(data || []);
+    } catch (err: any) {
+      setFormError('Gagal mengambil data: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [autoSyncData]);
+
+  useEffect(() => {
+    fetchRankings();
+  }, [fetchRankings]);
+
+  useEffect(() => {
+    if (successMsg) {
+      const timer = setTimeout(() => setSuccessMsg(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const filePath = `ranking-photos/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('images')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from('images').getPublicUrl(filePath);
+      setFormData((prev) => ({ ...prev, photo_url: publicUrl }));
+      setSuccessMsg('Foto berhasil diunggah!');
+    } catch (err: any) {
+      alert('Gagal upload: ' + err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    setIsSaving(true);
+
+    try {
+      if (!formData.player_name) throw new Error('Nama atlet wajib diisi');
+
+      const cleanName = formData.player_name.trim().toUpperCase();
+      const base = Number(formData.poin) || 0;
+      const added = Number(formData.bonus) || 0;
+
+      const payload = {
+        player_name: cleanName,
+        category: formData.category,
+        seed: formData.seed,
+        poin: base,
+        bonus: added,
+        total_points: base + added,
+        photo_url: formData.photo_url || null,
+      };
+
+      let error;
+      if (editingId) {
+        const { error: updateError } = await supabase
+          .from('rankings')
+          .update(payload)
+          .eq('id', editingId);
+        error = updateError;
+      } else {
+        const { error: upsertError } = await supabase
+          .from('rankings')
+          .upsert([payload], { onConflict: 'player_name' });
+        error = upsertError;
+      }
+
+      if (error) throw error;
+
+      setIsModalOpen(false);
+      setEditingId(null);
+      setSuccessMsg('Data berhasil disimpan!');
+      fetchRankings();
+    } catch (err: any) {
+      setFormError(err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Hapus atlet ini dari tabel ranking?')) return;
+    try {
+      const { error } = await supabase.from('rankings').delete().eq('id', id);
+      if (error) throw error;
+      setSuccessMsg('Data berhasil dihapus');
+      fetchRankings();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const filteredRankings = rankings.filter(
+    (r) =>
+      (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase()) &&
+      (selectedSeed === 'Semua' || r.seed === selectedSeed)
+  );
+
+  const totalPages = Math.ceil(filteredRankings.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedRankings = filteredRankings.slice(
+    startIndex,
+    startIndex + itemsPerPage
+  );
+
+  return (
+    <div className="min-h-screen bg-[#050505] text-white p-4 md:p-12 font-sans selection:bg-blue-500/30">
+      <div className="max-w-6xl mx-auto">
+        {successMsg && (
+          <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[150] bg-blue-600 text-white px-6 py-3 rounded-full font-bold text-xs uppercase flex items-center gap-3 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
+            <Zap size={16} className="fill-white" /> {successMsg}
+          </div>
+        )}
+
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
+          <div>
+            <h1 className="text-5xl font-black italic tracking-tighter uppercase leading-none">
+              MANAJEMEN<span className="text-blue-600"> RANKING</span>
+            </h1>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="w-2 h-2 bg-blue-600 animate-pulse rounded-full"></span>
+              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em]">
+                PB BILIBILI 162 • Tabel Atlet Terintegrasi
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 w-full md:w-auto">
+            <button
+              onClick={fetchRankings}
+              disabled={loading}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-900 border border-white/10 px-6 py-4 rounded-xl font-bold uppercase text-[10px] hover:bg-zinc-800 transition-all text-zinc-300"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+              Sinkronisasi Data
+            </button>
+            <button
+              onClick={() => {
+                setEditingId(null);
+                setFormData({
+                  player_name: '',
+                  category: 'Senior',
+                  seed: 'Seed A',
+                  total_points: 0,
+                  bonus: 0,
+                  poin: 0,
+                  photo_url: '',
+                });
+                setIsModalOpen(true);
+              }}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-4 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20"
+            >
+              <Plus size={14} /> Tambah Atlet
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Section */}
+        <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
+          <div className="relative flex-grow">
+            <Search
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500"
+              size={18}
+            />
+            <input
+              type="text"
+              placeholder="CARI NAMA ATLET..."
+              className="w-full bg-black/40 border border-white/5 rounded-xl py-3 pl-12 pr-4 outline-none text-xs font-bold uppercase focus:border-blue-600/50"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <select
+            className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer"
+            value={selectedSeed}
+            onChange={(e) => setSelectedSeed(e.target.value)}
+          >
+            <option value="Semua">SEMUA SEED</option>
+            <option value="Seed A">SEED A</option>
+            <option value="Seed B+">SEED B+</option>
+            <option value="Seed B">SEED B</option>
+            <option value="Seed C">SEED C</option>
+            <option value="Non-Seed">NON-SEED</option>
+          </select>
+        </div>
+
+        {/* Table Section */}
+        <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
+          <table className="w-full text-left min-w-[900px]">
+            <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
+              <tr>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center w-20">
+                  Rank
+                </th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">
+                  Profil Atlet
+                </th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">
+                  Base Points
+                </th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">
+                  Added Points
+                </th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center">
+                  Total Ranking
+                </th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-right">
+                  Aksi
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {loading ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse"
+                  >
+                    Memproses Data Ranking...
+                  </td>
+                </tr>
+              ) : paginatedRankings.length > 0 ? (
+                paginatedRankings.map((item, index) => (
+                  <tr
+                    key={item.id}
+                    className="hover:bg-white/[0.02] transition-all group"
+                  >
+                    <td className="p-5 text-center font-black italic text-xl text-zinc-700 group-hover:text-blue-500">
+                      {String(startIndex + index + 1).padStart(2, '0')}
+                    </td>
+                    <td className="p-5">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-zinc-800 rounded-full border border-white/10 overflow-hidden ring-2 ring-blue-600/20">
+                          {item.photo_url ? (
+                            <img
+                              src={item.photo_url}
+                              className="w-full h-full object-cover"
+                              alt=""
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <User size={20} className="text-zinc-600" />
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-black uppercase italic text-sm text-white group-hover:text-blue-400 leading-none">
+                            {item.player_name}
+                          </p>
+                          <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">
+                            {item.category} • {item.seed}
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-5">
+                      {/* PERBAIKAN: Menggunakan properti 'poin' sesuai Interface */}
+                      <span className="text-zinc-400 font-bold text-xs">
+                        {(Number(item.poin) || 0).toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="p-5">
+                      <span className="text-emerald-500 font-bold text-xs">
+                        +{(Number(item.bonus) || 0).toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="p-5 text-center">
+                      <span className="text-xl font-black text-white group-hover:text-blue-500 transition-colors">
+                        {(Number(item.total_points) || 0).toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="p-5 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                      <button
+                        onClick={() => {
+                          setEditingId(item.id);
+                          setFormData(item);
+                          setIsModalOpen(true);
+                        }}
+                        className="p-2.5 bg-zinc-900 hover:bg-blue-600 rounded-xl border border-white/5"
+                      >
+                        <Edit3 size={16} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="p-2.5 bg-zinc-900 hover:bg-red-600 rounded-xl border border-white/5"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="p-20 text-center text-zinc-500 uppercase font-bold text-xs"
+                  >
+                    Tidak ada data ditemukan
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex justify-between items-center mt-8 px-2">
+            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+              Halaman {currentPage} dari {totalPages}
+            </p>
+            <div className="flex gap-2">
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((prev) => prev - 1)}
+                className="p-3 bg-zinc-900 border border-white/5 rounded-xl hover:bg-zinc-800 disabled:opacity-30 transition-all"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <button
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((prev) => prev + 1)}
+                className="p-3 bg-zinc-900 border border-white/5 rounded-xl hover:bg-zinc-800 disabled:opacity-30 transition-all"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Modal Form */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
+          <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
+            <div className="p-8 border-b border-white/5 flex justify-between items-center">
+              <h3 className="font-black uppercase italic text-2xl">
+                {editingId ? 'EDIT' : 'TAMBAH'} ATLET
+              </h3>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="p-3 bg-zinc-900 rounded-2xl"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-8 space-y-6">
+              <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-3xl">
+                <div className="w-20 h-20 bg-zinc-900 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center">
+                  {formData.photo_url ? (
+                    <img
+                      src={formData.photo_url}
+                      className="w-full h-full object-cover"
+                      alt=""
+                    />
+                  ) : (
+                    <Camera size={24} className="text-zinc-700" />
+                  )}
+                </div>
+                <div className="flex-grow">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    accept="image/*"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-zinc-800 px-4 py-2 rounded-xl text-[10px] font-bold uppercase"
+                  >
+                    {isUploading ? 'Uploading...' : 'Ganti Foto'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2 col-span-2">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase">
+                    Nama Lengkap
+                  </label>
+                  <input
+                    required
+                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none focus:border-blue-600 font-black uppercase text-sm"
+                    value={formData.player_name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, player_name: e.target.value })
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase">
+                    Kategori
+                  </label>
+                  <select
+                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none font-bold text-xs"
+                    value={formData.category}
+                    onChange={(e) =>
+                      setFormData({ ...formData, category: e.target.value })
+                    }
+                  >
+                    <option value="Senior">Senior</option>
+                    <option value="Junior">Junior</option>
+                    <option value="Veteran">Veteran</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase">
+                    Seed
+                  </label>
+                  <select
+                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none font-bold text-xs"
+                    value={formData.seed}
+                    onChange={(e) =>
+                      setFormData({ ...formData, seed: e.target.value })
+                    }
+                  >
+                    <option value="Seed A">Seed A</option>
+                    <option value="Seed B+">Seed B+</option>
+                    <option value="Seed B">Seed B</option>
+                    <option value="Seed C">Seed C</option>
+                    <option value="Non-Seed">Non-Seed</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-zinc-500 uppercase">
+                    Base Points
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none text-zinc-400"
+                    value={formData.poin}
+                    onChange={(e) =>
+                      setFormData({ ...formData, poin: Number(e.target.value) })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-emerald-500 uppercase">
+                    Added Points
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full bg-zinc-900 border border-emerald-500/20 rounded-2xl p-4 outline-none"
+                    value={formData.bonus}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        bonus: Number(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-600/20 flex justify-between items-center">
+                <span className="text-[10px] font-black uppercase text-blue-400 italic">
+                  Total Poin Akhir
+                </span>
+                <span className="text-2xl font-black text-white">
+                  {(
+                    (Number(formData.poin) || 0) + (Number(formData.bonus) || 0)
+                  ).toLocaleString()}
+                </span>
+              </div>
+
+              {formError && (
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 text-[10px] font-bold uppercase">
+                  <AlertCircle size={16} /> {formError}
+                </div>
+              )}
+
+              <button
+                disabled={isSaving || isUploading}
+                className="w-full py-5 bg-blue-600 hover:bg-blue-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all"
+              >
+                {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
+                {editingId ? 'PERBARUI DATA' : 'SIMPAN DATA'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
