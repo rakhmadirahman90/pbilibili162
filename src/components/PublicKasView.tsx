@@ -61,12 +61,20 @@ export default function PublicKasView() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- LOGIKA FILTER PENCARIAN & TANGGAL (DIPERBAIKI) ---
+  // --- LOGIKA SALDO GLOBAL (Sama dengan Admin) ---
+  // Menghitung seluruh data di database tanpa terpengaruh filter tanggal UI
+  const globalStats = kasData.reduce((acc, curr) => {
+    const jenis = DAFTAR_PEMASUKAN.includes(curr.kategori) ? 'Masuk' : curr.jenis_transaksi;
+    if (jenis === 'Masuk') acc.totalMasuk += curr.jumlah_bayar;
+    else acc.totalKeluar += curr.jumlah_bayar;
+    return acc;
+  }, { totalMasuk: 0, totalKeluar: 0 });
+
+  const saldoGlobalTerkini = globalStats.totalMasuk - globalStats.totalKeluar;
+
+  // --- LOGIKA FILTER PENCARIAN & TANGGAL ---
   const filteredData = kasData.filter(item => {
-    // 1. Filter Rentang Tanggal
     const matchDate = item.tanggal_transaksi >= startDate && item.tanggal_transaksi <= endDate;
-    
-    // 2. Filter Pencarian (Nama Atlet atau Kategori)
     const searchLower = searchTerm.toLowerCase().trim();
     const matchSearch = 
       item.nama_pembayar.toLowerCase().includes(searchLower) || 
@@ -75,11 +83,10 @@ export default function PublicKasView() {
     return matchDate && matchSearch;
   }).map(item => ({
     ...item,
-    // Normalisasi jenis transaksi berdasarkan kategori tetap
     jenis_transaksi: (DAFTAR_PEMASUKAN.includes(item.kategori) ? 'Masuk' : item.jenis_transaksi) as 'Masuk' | 'Keluar'
   }));
 
-  // Stats
+  // Stats untuk periode yang dipilih (tampilan card atas)
   const stats = filteredData.reduce((acc, curr) => {
     if (curr.jenis_transaksi === 'Masuk') acc.masuk += curr.jumlah_bayar;
     else acc.keluar += curr.jumlah_bayar;
@@ -121,35 +128,40 @@ export default function PublicKasView() {
       doc.text('PB. BILI BILI 162', 42, 20);
       doc.setFontSize(9).setFont("helvetica", "normal").setTextColor(100);
       doc.text('Laporan Transaksi Kas Transparan - Kota Parepare', 42, 26);
-      doc.text(`Periode: ${startDate} s/d ${endDate}`, 42, 31);
+      doc.text(`Periode Laporan: ${startDate} s/d ${endDate}`, 42, 31);
       doc.setDrawColor(30, 64, 175).setLineWidth(0.5).line(15, 38, 195, 38);
 
       autoTable(doc, {
         startY: 45,
-        head: [['Tanggal', 'Nama/Keterangan', 'Ket/Bola', 'Kategori', 'Tipe', 'Nominal']],
+        // URUTAN KOLOM DIPERBAIKI: Kategori dulu baru Ket/Bola
+        head: [['Tanggal', 'Nama / Keterangan', 'Kategori', 'Ket / Bola', 'Tipe', 'Nominal']],
         body: filteredData.map(item => [
           item.tanggal_transaksi,
           item.nama_pembayar.toUpperCase(),
-          item.jumlah_bola > 0 ? `${item.jumlah_bola} Pcs` : '-',
           item.kategori,
+          item.jumlah_bola > 0 ? `${item.jumlah_bola} Pcs` : '-',
           item.jenis_transaksi.toUpperCase(),
           `Rp ${item.jumlah_bayar.toLocaleString()}`
         ]),
         headStyles: { fillColor: [30, 64, 175], fontSize: 9, halign: 'center' },
         columnStyles: { 
-          2: { halign: 'center' },
+          3: { halign: 'center' },
           4: { halign: 'center' },
           5: { halign: 'right' } 
         },
-        styles: { fontSize: 8 }
+        styles: { fontSize: 8, cellPadding: 3 }
       });
 
       const finalY = (doc as any).lastAutoTable.finalY + 10;
-      doc.setFont("helvetica", "bold").text(`Total Masuk: Rp ${stats.masuk.toLocaleString()}`, 195, finalY, { align: 'right' });
-      doc.text(`Total Keluar: Rp ${stats.keluar.toLocaleString()}`, 195, finalY + 7, { align: 'right' });
-      doc.setTextColor(30, 64, 175).text(`Saldo Akhir: Rp ${(stats.masuk - stats.keluar).toLocaleString()}`, 195, finalY + 14, { align: 'right' });
+      doc.setFontSize(10).setFont("helvetica", "bold").setTextColor(80);
+      doc.text(`Total Masuk (Periode): Rp ${stats.masuk.toLocaleString()}`, 195, finalY, { align: 'right' });
+      doc.text(`Total Keluar (Periode): Rp ${stats.keluar.toLocaleString()}`, 195, finalY + 7, { align: 'right' });
+      
+      // Saldo Akhir menggunakan Saldo Global agar sinkron dengan Admin
+      doc.setTextColor(30, 64, 175);
+      doc.text(`SALDO KAS GLOBAL: Rp ${saldoGlobalTerkini.toLocaleString()}`, 195, finalY + 15, { align: 'right' });
 
-      doc.save(`Laporan_Kas_Publik_${startDate}.pdf`);
+      doc.save(`Laporan_Kas_PB162_${startDate}.pdf`);
     } catch (e) { alert("Gagal export PDF"); }
   };
 
@@ -179,7 +191,7 @@ export default function PublicKasView() {
         </button>
       </div>
 
-      {/* Filter Section (PENCARIAN DIPERBAIKI) */}
+      {/* Filter Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 shadow-inner">
         <div className="space-y-2">
           <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] px-1">Cari Atlet / Kategori</label>
@@ -192,7 +204,7 @@ export default function PublicKasView() {
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
-                setCurrentPage(1); // RESET KE HALAMAN 1 SAAT MENGETIK
+                setCurrentPage(1);
               }}
             />
           </div>
@@ -223,7 +235,7 @@ export default function PublicKasView() {
           <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform">
             <TrendingUp size={120} className="text-emerald-600" />
           </div>
-          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.3em] mb-2">Pemasukan Kas</p>
+          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.3em] mb-2">Pemasukan Periode</p>
           <p className="text-3xl font-black text-emerald-700 tracking-tighter">Rp {stats.masuk.toLocaleString()}</p>
         </div>
         
@@ -231,16 +243,17 @@ export default function PublicKasView() {
           <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform">
             <TrendingDown size={120} className="text-rose-600" />
           </div>
-          <p className="text-[10px] font-black text-rose-600 uppercase tracking-[0.3em] mb-2">Pengeluaran Kas</p>
+          <p className="text-[10px] font-black text-rose-600 uppercase tracking-[0.3em] mb-2">Pengeluaran Periode</p>
           <p className="text-3xl font-black text-rose-700 tracking-tighter">Rp {stats.keluar.toLocaleString()}</p>
         </div>
         
+        {/* SALDO GLOBAL: Tetap sama dengan Admin meski di filter */}
         <div className="bg-blue-600 p-8 rounded-[2rem] shadow-[0_20px_50px_rgba(37,99,235,0.2)] relative overflow-hidden group">
           <div className="absolute -right-4 -bottom-4 opacity-20 group-hover:scale-110 transition-transform">
             <Wallet size={120} className="text-white" />
           </div>
-          <p className="text-[10px] font-black text-blue-100 uppercase tracking-[0.3em] mb-2">Saldo Terkini</p>
-          <p className="text-3xl font-black text-white tracking-tighter">Rp {(stats.masuk - stats.keluar).toLocaleString()}</p>
+          <p className="text-[10px] font-black text-blue-100 uppercase tracking-[0.3em] mb-2">Total Saldo Kas Global</p>
+          <p className="text-3xl font-black text-white tracking-tighter">Rp {saldoGlobalTerkini.toLocaleString()}</p>
         </div>
       </div>
 
@@ -252,8 +265,8 @@ export default function PublicKasView() {
               <tr className="bg-slate-900 text-white">
                 <th className="p-6 text-[10px] font-black uppercase tracking-widest border-r border-white/5">Waktu</th>
                 <th className="p-6 text-[10px] font-black uppercase tracking-widest border-r border-white/5">Nama / Keterangan</th>
-                <th className="p-6 text-[10px] font-black uppercase tracking-widest text-center border-r border-white/5">Ket / Bola</th>
                 <th className="p-6 text-[10px] font-black uppercase tracking-widest border-r border-white/5">Kategori Transaksi</th>
+                <th className="p-6 text-[10px] font-black uppercase tracking-widest text-center border-r border-white/5">Ket / Bola</th>
                 <th className="p-6 text-[10px] font-black uppercase tracking-widest text-center border-r border-white/5">Tipe</th>
                 <th className="p-6 text-[10px] font-black uppercase tracking-widest text-right">Nominal</th>
               </tr>
@@ -295,6 +308,11 @@ export default function PublicKasView() {
                         {item.nama_pembayar}
                       </p>
                     </td>
+                    <td className="p-6">
+                       <span className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-wider border border-slate-200">
+                          {item.kategori}
+                       </span>
+                    </td>
                     <td className="p-6 text-center">
                        {item.jumlah_bola > 0 ? (
                          <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-amber-50 text-amber-700 rounded-xl border border-amber-100 shadow-sm">
@@ -304,11 +322,6 @@ export default function PublicKasView() {
                        ) : (
                          <span className="text-slate-200 font-black">--</span>
                        )}
-                    </td>
-                    <td className="p-6">
-                       <span className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-wider border border-slate-200">
-                          {item.kategori}
-                       </span>
                     </td>
                     <td className="p-6 text-center">
                        <div className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest ${isIncome ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-700 border border-rose-200'}`}>
@@ -326,7 +339,7 @@ export default function PublicKasView() {
           </table>
         </div>
 
-        {/* Improved Pagination Section */}
+        {/* Pagination Section */}
         <div className="p-8 bg-slate-50 flex flex-col md:flex-row items-center justify-between gap-6 border-t border-slate-100">
            <div className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">
               Data Ke <span className="text-slate-900">{(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredData.length)}</span> Dari <span className="text-slate-900">{filteredData.length}</span> Transaksi
@@ -366,7 +379,7 @@ export default function PublicKasView() {
         <p>© 2026 PB. BILI BILI 162 • DIVISI KEUANGAN TRANSPARAN</p>
         <p className="flex items-center gap-2 italic">
           <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" /> 
-          Verified by Supabase Engine
+          Verified by Admin
         </p>
       </div>
     </div>
