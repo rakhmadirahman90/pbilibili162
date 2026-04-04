@@ -133,8 +133,8 @@ export default function KasManager() {
       doc.text('PB. BILI BILI 162', 45, 20);
       
       doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(80, 80, 80);
-      doc.text('Sekretariat: Jl. Bili-Bili No. 162, Kota Parepare, Sulawesi Selatan', 45, 26);
-      doc.text('Email: pbbilibili162@gmail.com | Mobile: +62 8XX XXXX XXXX', 45, 31);
+      doc.text('Sekretariat: Jl. Andi Makkasau No.171, Ujung Lare, Kec. Soreang, Kota Parepare, Sulawesi Selatan 91131', 45, 26);
+      doc.text('Email: pbbilibili162@gmail.com | Mobile: +62 812 902 7234', 45, 31);
       
       // Garis Pemisah (Double Line Effect)
       doc.setDrawColor(30, 64, 175).setLineWidth(0.8).line(15, 40, 195, 40);
