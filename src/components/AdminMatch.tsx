@@ -3,7 +3,7 @@ import { supabase } from "../supabase";
 import { 
   Trophy, User, Activity, CheckCircle2, 
   Plus, Loader2, Trash2, Send, Clock, AlertCircle, Sparkles, RefreshCcw, Search, X, RotateCcw,
-  ShieldCheck, ArrowRightLeft, ChevronDown
+  ShieldCheck, ArrowRightLeft, ChevronDown, Database
 } from 'lucide-react';
 
 const AdminMatch: React.FC = () => {
@@ -11,6 +11,7 @@ const AdminMatch: React.FC = () => {
   const [recentMatches, setRecentMatches] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false); // New state
   
   const [showSuccess, setShowSuccess] = useState(false);
   const [showRollbackSuccess, setShowRollbackSuccess] = useState(false); 
@@ -34,7 +35,6 @@ const AdminMatch: React.FC = () => {
     { id: 'Eksternal', label: 'Turnamen Eksternal', points: '500/--/100' },
   ];
 
-  // PERBAIKAN: Mengambil kolom 'total_points' sesuai struktur database terbaru
   const fetchPlayers = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -54,7 +54,7 @@ const AdminMatch: React.FC = () => {
         const formattedPlayers = data.map(item => ({
           id: item.pendaftaran_id,
           nama: item.player_name,
-          total_points: item.total_points || 0, // Menggunakan total_points
+          total_points: item.total_points || 0,
           kategori: (item.pendaftaran as any)?.kategori || 'N/A'
         }));
         setPlayers(formattedPlayers);
@@ -88,11 +88,57 @@ const AdminMatch: React.FC = () => {
     }
   }, []);
 
+  // --- KODE BARU: FUNGSI PERBAIKAN DATA MASAL (RECALCULATE) ---
+  const recalculateAllPoints = async () => {
+    if (!window.confirm("Sistem akan menghitung ulang seluruh poin atlet berdasarkan riwayat pertandingan. Lanjutkan?")) return;
+    
+    setIsRecalculating(true);
+    try {
+      // 1. Ambil semua pertandingan
+      const { data: allMatches, error: matchErr } = await supabase
+        .from('pertandingan')
+        .select('pendaftaran_id, kategori_kegiatan, hasil');
+      
+      if (matchErr) throw matchErr;
+
+      // 2. Ambil semua atlet
+      const { data: allStats, error: statsErr } = await supabase
+        .from('atlet_stats')
+        .select('pendaftaran_id, player_name');
+      
+      if (statsErr) throw statsErr;
+
+      // 3. Kalkulasi Poin per Atlet
+      const updatePromises = allStats.map(async (atlet) => {
+        const atletMatches = allMatches.filter(m => m.pendaftaran_id === atlet.pendaftaran_id);
+        
+        const newTotal = atletMatches.reduce((sum, m) => {
+          const p = POINT_MAP[m.kategori_kegiatan]?.[m.hasil] || 0;
+          return sum + p;
+        }, 0);
+
+        // 4. Update ke Database
+        return supabase
+          .from('atlet_stats')
+          .update({ total_points: newTotal })
+          .eq('pendaftaran_id', atlet.pendaftaran_id);
+      });
+
+      await Promise.all(updatePromises);
+      alert("Sinkronisasi Massal Berhasil! Seluruh poin telah diperbarui.");
+      fetchPlayers();
+    } catch (err: any) {
+      alert("Gagal Sinkronisasi Massal: " + err.message);
+    } finally {
+      setIsRecalculating(false);
+    }
+  };
+  // --- END KODE BARU ---
+
   useEffect(() => {
     fetchPlayers();
     fetchRecentMatches();
 
-    // Realtime subscription untuk sinkronisasi otomatis
     const channel = supabase
       .channel('admin_realtime_sync')
       .on('postgres_changes', 
@@ -137,7 +183,6 @@ const AdminMatch: React.FC = () => {
 
   const syncPlayerPerformance = async (playerId: string, pointsToAdd: number, currentKategori: string, currentHasil: string) => {
     try {
-      // Step 1: Ambil data terbaru langsung dari database
       const { data: stats, error: fetchError } = await supabase
         .from('atlet_stats')
         .select('total_points, player_name')
@@ -150,7 +195,6 @@ const AdminMatch: React.FC = () => {
       const playerName = stats?.player_name || 'Unknown';
       const newTotal = Math.max(0, existingPoints + pointsToAdd);
 
-      // Step 2: Update poin pada kolom total_points
       const { error: updateError } = await supabase
         .from('atlet_stats')
         .update({
@@ -161,7 +205,6 @@ const AdminMatch: React.FC = () => {
 
       if (updateError) throw updateError;
 
-      // Step 3: Log Audit
       await createAuditLog(playerId, playerName, pointsToAdd, existingPoints, newTotal, currentKategori, currentHasil);
 
       return true;
@@ -179,7 +222,6 @@ const AdminMatch: React.FC = () => {
     try {
       const pointsToAdd = POINT_MAP[kategori][hasil] || 0;
 
-      // 1. Simpan Match
       const { error: matchErr } = await supabase
         .from('pertandingan')
         .insert([{ 
@@ -190,7 +232,6 @@ const AdminMatch: React.FC = () => {
 
       if (matchErr) throw matchErr;
 
-      // 2. Sync Poin & Stats
       const success = await syncPlayerPerformance(selectedPlayer, pointsToAdd, kategori, hasil);
 
       if (success) {
@@ -269,11 +310,21 @@ const AdminMatch: React.FC = () => {
             </h1>
           </div>
           
-          <button onClick={() => { fetchPlayers(); fetchRecentMatches(); }} 
-            className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-800 transition-all active:scale-95 disabled:opacity-50"
-            disabled={isLoading}>
-            <RefreshCcw size={14} className={isLoading ? 'animate-spin' : ''} /> Force Sync
-          </button>
+          <div className="flex gap-3">
+             {/* TOMBOL BARU: RECALCULATE */}
+             <button onClick={recalculateAllPoints}
+                disabled={isRecalculating}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-900/30 border border-emerald-500/30 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-800/50 transition-all text-emerald-400">
+                {isRecalculating ? <Loader2 size={14} className="animate-spin" /> : <Database size={14} />} 
+                Reset & Recalculate All
+             </button>
+
+             <button onClick={() => { fetchPlayers(); fetchRecentMatches(); }} 
+                className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-800 transition-all active:scale-95 disabled:opacity-50"
+                disabled={isLoading}>
+                <RefreshCcw size={14} className={isLoading ? 'animate-spin' : ''} /> Force Sync
+             </button>
+          </div>
         </div>
 
         <div className="grid md:grid-cols-3 gap-8">
@@ -284,7 +335,7 @@ const AdminMatch: React.FC = () => {
                     <ShieldCheck className="text-blue-500" size={24} />
                     <div>
                         <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Database Integrity Verified</p>
-                        <p className="text-[10px] text-zinc-500 font-bold leading-tight">Sinkronisasi otomatis aktif untuk 67 atlet terdaftar.</p>
+                        <p className="text-[10px] text-zinc-500 font-bold leading-tight">Sinkronisasi otomatis aktif untuk seluruh atlet terdaftar.</p>
                     </div>
                 </div>
 
@@ -358,7 +409,6 @@ const AdminMatch: React.FC = () => {
               </form>
             </div>
 
-            {/* Recent Match List */}
             <div className="bg-zinc-900/30 border border-white/5 p-8 rounded-[2.5rem]">
               <h3 className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 mb-6">
                 <Clock size={14} /> Activity Log
@@ -405,7 +455,6 @@ const AdminMatch: React.FC = () => {
         </div>
       </div>
 
-      {/* Notif Success */}
       <div className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] transition-all duration-700 ${showSuccess ? 'translate-y-0 opacity-100' : 'translate-y-24 opacity-0 pointer-events-none'}`}>
         <div className="bg-zinc-950 border border-emerald-500/50 px-10 py-6 rounded-[3rem] flex items-center gap-6 shadow-2xl">
           <div className="bg-emerald-600 p-3 rounded-xl">
