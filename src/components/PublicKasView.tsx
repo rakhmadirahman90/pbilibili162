@@ -61,8 +61,7 @@ export default function PublicKasView() {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- LOGIKA SALDO GLOBAL (Sama dengan Admin) ---
-  // Menghitung seluruh data di database tanpa terpengaruh filter tanggal UI
+  // --- LOGIKA SALDO GLOBAL ---
   const globalStats = kasData.reduce((acc, curr) => {
     const jenis = DAFTAR_PEMASUKAN.includes(curr.kategori) ? 'Masuk' : curr.jenis_transaksi;
     if (jenis === 'Masuk') acc.totalMasuk += curr.jumlah_bayar;
@@ -86,14 +85,12 @@ export default function PublicKasView() {
     jenis_transaksi: (DAFTAR_PEMASUKAN.includes(item.kategori) ? 'Masuk' : item.jenis_transaksi) as 'Masuk' | 'Keluar'
   }));
 
-  // Stats untuk periode yang dipilih (tampilan card atas)
   const stats = filteredData.reduce((acc, curr) => {
     if (curr.jenis_transaksi === 'Masuk') acc.masuk += curr.jumlah_bayar;
     else acc.keluar += curr.jumlah_bayar;
     return acc;
   }, { masuk: 0, keluar: 0 });
 
-  // Pagination Logic
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
   const currentItems = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
@@ -116,52 +113,95 @@ export default function PublicKasView() {
     });
   };
 
+  // --- PERBAIKAN EXPORT PDF AGAR SAMA DENGAN ADMIN ---
   const exportToPDF = async () => {
     try {
       const doc = new jsPDF('p', 'mm', 'a4');
+      
+      // 1. Header & Logo
       try {
         const logo = await getTransparentImageData(PB_LOGO_URL);
         doc.addImage(logo, 'PNG', 15, 12, 22, 22);
       } catch (e) {}
 
-      doc.setFont("helvetica", "bold").setFontSize(20).setTextColor(30, 64, 175);
+      doc.setFont("helvetica", "bold").setFontSize(22).setTextColor(30, 64, 175);
       doc.text('PB. BILI BILI 162', 42, 20);
+      
       doc.setFontSize(9).setFont("helvetica", "normal").setTextColor(100);
-      doc.text('Laporan Transaksi Kas Transparan - Kota Parepare', 42, 26);
-      doc.text(`Periode Laporan: ${startDate} s/d ${endDate}`, 42, 31);
-      doc.setDrawColor(30, 64, 175).setLineWidth(0.5).line(15, 38, 195, 38);
+      doc.text('Sekretariat: Jl. Andi Makkasau No.171, Ujung Lare, Kec. Soreang, Parepare 91131', 42, 25);
+      doc.text('Email: pbbilibili162@gmail.com | Mobile: +62 812 902 7234', 42, 30);
+      
+      doc.setDrawColor(30, 64, 175).setLineWidth(0.8).line(15, 38, 195, 38);
 
+      // 2. Judul Laporan
+      doc.setFontSize(14).setFont("helvetica", "bold").setTextColor(40);
+      doc.text('LAPORAN PERTANGGUNGJAWABAN KEUANGAN KAS', 105, 50, { align: 'center' });
+      doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(120);
+      doc.text(`Periode: ${startDate} s/d ${endDate}`, 105, 56, { align: 'center' });
+
+      // 3. Tabel Transaksi
       autoTable(doc, {
-        startY: 45,
-        // URUTAN KOLOM DIPERBAIKI: Kategori dulu baru Ket/Bola
-        head: [['Tanggal', 'Nama / Keterangan', 'Kategori', 'Ket / Bola', 'Tipe', 'Nominal']],
+        startY: 65,
+        head: [['Tanggal', 'Nama', 'Jenis', 'Kategori', 'Ket/Bola', 'Nominal']],
         body: filteredData.map(item => [
           item.tanggal_transaksi,
           item.nama_pembayar.toUpperCase(),
+          { content: item.jenis_transaksi, styles: { textColor: item.jenis_transaksi === 'Masuk' ? [16, 185, 129] : [225, 29, 72] } },
           item.kategori,
-          item.jumlah_bola > 0 ? `${item.jumlah_bola} Pcs` : '-',
-          item.jenis_transaksi.toUpperCase(),
+          item.jumlah_bola > 0 ? `${item.jumlah_bola}` : '-',
           `Rp ${item.jumlah_bayar.toLocaleString()}`
         ]),
-        headStyles: { fillColor: [30, 64, 175], fontSize: 9, halign: 'center' },
+        headStyles: { fillColor: [30, 64, 175], fontSize: 9, halign: 'center', fontStyle: 'bold' },
         columnStyles: { 
-          3: { halign: 'center' },
+          0: { cellWidth: 25 },
+          2: { halign: 'center', fontStyle: 'bold' },
           4: { halign: 'center' },
-          5: { halign: 'right' } 
+          5: { halign: 'right', fontStyle: 'bold' } 
         },
-        styles: { fontSize: 8, cellPadding: 3 }
+        styles: { fontSize: 8, cellPadding: 3, valign: 'middle' },
+        alternateRowStyles: { fillColor: [248, 250, 252] }
       });
 
+      // 4. Ringkasan Keuangan (Kanan Bawah)
       const finalY = (doc as any).lastAutoTable.finalY + 10;
-      doc.setFontSize(10).setFont("helvetica", "bold").setTextColor(80);
-      doc.text(`Total Masuk (Periode): Rp ${stats.masuk.toLocaleString()}`, 195, finalY, { align: 'right' });
-      doc.text(`Total Keluar (Periode): Rp ${stats.keluar.toLocaleString()}`, 195, finalY + 7, { align: 'right' });
       
-      // Saldo Akhir menggunakan Saldo Global agar sinkron dengan Admin
-      doc.setTextColor(30, 64, 175);
-      doc.text(`SALDO KAS GLOBAL: Rp ${saldoGlobalTerkini.toLocaleString()}`, 195, finalY + 15, { align: 'right' });
+      // Kotak Ringkasan
+      doc.setDrawColor(240).setFillColor(248, 250, 252).roundedRect(120, finalY, 75, 28, 3, 3, 'FD');
+      
+      doc.setFontSize(9).setFont("helvetica", "bold").setTextColor(100);
+      doc.text('Total Pemasukan:', 125, finalY + 8);
+      doc.setTextColor(16, 185, 129);
+      doc.text(`Rp ${stats.masuk.toLocaleString()}`, 190, finalY + 8, { align: 'right' });
 
-      doc.save(`Laporan_Kas_PB162_${startDate}.pdf`);
+      doc.setTextColor(100);
+      doc.text('Total Pengeluaran:', 125, finalY + 15);
+      doc.setTextColor(225, 29, 72);
+      doc.text(`Rp ${stats.keluar.toLocaleString()}`, 190, finalY + 15, { align: 'right' });
+
+      doc.setDrawColor(230).line(125, finalY + 19, 190, finalY + 19);
+
+      doc.setTextColor(30, 64, 175);
+      doc.text('Saldo Akhir Kas:', 125, finalY + 24);
+      doc.text(`Rp ${saldoGlobalTerkini.toLocaleString()}`, 190, finalY + 24, { align: 'right' });
+
+      // 5. Tanda Tangan
+      const signY = finalY + 45;
+      doc.setTextColor(40).setFontSize(9);
+      doc.text(`Parepare, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, 195, signY - 10, { align: 'right' });
+      
+      doc.setFont("helvetica", "bold");
+      doc.text('Mengetahui,', 15, signY);
+      doc.text('Ketua PB. Bili Bili 162', 15, signY + 5);
+      
+      doc.text('Bendahara Umum,', 195, signY + 5, { align: 'right' });
+
+      doc.text('H. WAWAN', 15, signY + 35);
+      doc.line(15, signY + 36, 60, signY + 36);
+      
+      doc.text('MUH. NUR', 195, signY + 35, { align: 'right' });
+      doc.line(150, signY + 36, 195, signY + 36);
+
+      doc.save(`LPJ_KAS_PB162_${startDate}_TO_${endDate}.pdf`);
     } catch (e) { alert("Gagal export PDF"); }
   };
 
@@ -247,7 +287,6 @@ export default function PublicKasView() {
           <p className="text-3xl font-black text-rose-700 tracking-tighter">Rp {stats.keluar.toLocaleString()}</p>
         </div>
         
-        {/* SALDO GLOBAL: Tetap sama dengan Admin meski di filter */}
         <div className="bg-blue-600 p-8 rounded-[2rem] shadow-[0_20px_50px_rgba(37,99,235,0.2)] relative overflow-hidden group">
           <div className="absolute -right-4 -bottom-4 opacity-20 group-hover:scale-110 transition-transform">
             <Wallet size={120} className="text-white" />
