@@ -26,13 +26,13 @@ const KelolaHero: React.FC = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- STATE BARU: IMAGE CROPPER ---
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
   const [showCropModal, setShowCropModal] = useState(false);
 
+  // ID Konsisten untuk Konfigurasi Hero
   const HERO_CONFIG_ID = '6d9e09d9-acc2-46e9-9a73-87bc05444018';
 
   useEffect(() => {
@@ -62,7 +62,6 @@ const KelolaHero: React.FC = () => {
     }
   };
 
-  // --- LOGIKA CROP & KOMPRESI ---
   const onCropComplete = useCallback((_ : any, croppedAreaPixels: any) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
@@ -86,16 +85,13 @@ const KelolaHero: React.FC = () => {
     setShowCropModal(false);
 
     try {
-      // 1. Create Image Object
       const image = new Image();
       image.src = imageToCrop;
       await new Promise((resolve) => (image.onload = resolve));
 
-      // 2. Create Canvas for Cropping & Compression
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
 
-      // Set output resolution (HD 16:9)
       const targetWidth = 1920;
       const targetHeight = 1080;
       canvas.width = targetWidth;
@@ -112,14 +108,12 @@ const KelolaHero: React.FC = () => {
         );
       }
 
-      // 3. Convert to Blob (Compress to JPEG 0.8)
       const blob = await new Promise<Blob | null>((resolve) => {
         canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.8);
       });
 
       if (!blob) throw new Error("Gagal mengolah gambar.");
 
-      // 4. Upload to Supabase
       const fileName = `hero-${Date.now()}.jpg`;
       const filePath = `hero-sliders/${fileName}`;
 
@@ -141,6 +135,11 @@ const KelolaHero: React.FC = () => {
     }
   };
 
+  /**
+   * PERBAIKAN UTAMA: Penanganan Unique Constraint "key"
+   * Menggunakan onConflict: 'key' untuk memastikan jika key 'hero_config' sudah ada,
+   * maka baris tersebut akan diperbarui, bukan membuat duplikat.
+   */
   const saveToDatabase = async (updatedSlides: any[], updatedSettings = sliderSettings) => {
     const payload = {
       slides: updatedSlides,
@@ -148,20 +147,21 @@ const KelolaHero: React.FC = () => {
       updated_at: new Date().toISOString()
     };
 
+    // Menggunakan key sebagai target konflik agar tidak melanggar unique constraint
     const { error } = await supabase
       .from('site_settings')
       .upsert({ 
-        id: HERO_CONFIG_ID,
         key: 'hero_config', 
         value: payload
-      }, { onConflict: 'id' });
+      }, { onConflict: 'key' }); 
 
     if (!error) {
       setSlides(updatedSlides);
       setSliderSettings(updatedSettings);
       triggerSuccess();
     } else {
-      alert("Database Error: " + error.message);
+      console.error("Database Save Error:", error.message);
+      alert("Gagal menyimpan ke database: " + error.message);
     }
   };
 
@@ -205,7 +205,10 @@ const KelolaHero: React.FC = () => {
   const deleteSlide = async (id: number) => {
     const target = slides.find(s => s.id === id);
     if (!target || !window.confirm("Hapus slide ini secara permanen?")) return;
-    await deleteFromStorage(target.image);
+    
+    // Opsional: Hapus dari storage jika diinginkan
+    // await deleteFromStorage(target.image); 
+    
     const updatedSlides = slides.filter(s => s.id !== id);
     if (editingId === id) resetForm();
     await saveToDatabase(updatedSlides);
@@ -244,7 +247,7 @@ const KelolaHero: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#050505] text-white p-6 md:p-12 font-sans selection:bg-blue-500/30">
       
-      {/* MODAL CROPPER - NEW FEATURE */}
+      {/* MODAL CROPPER */}
       {showCropModal && imageToCrop && (
         <div className="fixed inset-0 z-[999] bg-black/95 flex flex-col items-center justify-center p-4 md:p-10 backdrop-blur-xl">
           <div className="w-full max-w-4xl bg-zinc-900 rounded-[2.5rem] overflow-hidden border border-white/10 shadow-2xl">
@@ -278,7 +281,6 @@ const KelolaHero: React.FC = () => {
                   min={1}
                   max={3}
                   step={0.1}
-                  aria-labelledby="Zoom"
                   onChange={(e) => setZoom(Number(e.target.value))}
                   className="flex-grow h-1.5 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-600"
                 />
@@ -305,14 +307,13 @@ const KelolaHero: React.FC = () => {
       )}
 
       <div className="max-w-6xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
           <div>
             <h1 className="text-5xl font-black italic tracking-tighter uppercase text-white leading-none">
               HERO <span className="text-blue-600">ENGINE</span>
             </h1>
             <p className="text-zinc-500 text-[10px] font-black uppercase tracking-[0.3em] mt-3">
-              Manajemen Visual & Kompresi Aset Otomatis
+              Manajemen Visual PB Bilibili 162
             </p>
           </div>
           <button 
@@ -326,7 +327,7 @@ const KelolaHero: React.FC = () => {
         </div>
 
         <div className="grid lg:grid-cols-12 gap-10">
-          {/* SISI KIRI */}
+          {/* SISI KIRI: CONFIG */}
           <div className="lg:col-span-4 space-y-6">
             <div className="bg-blue-600 p-8 rounded-[2.5rem] shadow-[0_20px_50px_rgba(37,99,235,0.3)] relative overflow-hidden group">
                <Settings2 className="absolute -right-4 -bottom-4 text-white/10 w-32 h-32 rotate-12 group-hover:rotate-0 transition-transform duration-700" />
@@ -336,7 +337,7 @@ const KelolaHero: React.FC = () => {
                <div className="space-y-6 relative z-10">
                  <div>
                    <label className="text-[9px] font-black uppercase text-blue-100 flex items-center gap-2 mb-3">
-                     <Clock size={12} /> Auto-Slide Duration (Seconds)
+                     <Clock size={12} /> Auto-Slide Duration
                    </label>
                    <input 
                      type="range" min="3" max="15" step="1"
@@ -358,9 +359,8 @@ const KelolaHero: React.FC = () => {
               <div className="flex justify-between items-center mb-8">
                 <h3 className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2 text-blue-500">
                   {editingId ? <Edit3 size={16} /> : <Plus size={16} />} 
-                  {editingId ? 'Modify Hero Slide' : 'Register New Slide'}
+                  {editingId ? 'Modify Slide' : 'Register New Slide'}
                 </h3>
-                {editingId && <button onClick={resetForm} className="text-zinc-500 hover:text-white"><X size={16}/></button>}
               </div>
               
               <form onSubmit={handleAddSlide} className="space-y-5">
@@ -386,12 +386,12 @@ const KelolaHero: React.FC = () => {
                 <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" accept="image/*" />
 
                 <input 
-                  type="text" placeholder="Title Line" 
+                  type="text" placeholder="Judul Utama" 
                   value={title} onChange={(e) => setTitle(e.target.value)}
                   className="w-full bg-black border border-white/5 rounded-xl px-5 py-4 text-xs font-bold focus:border-blue-600 outline-none transition-colors"
                 />
                 <textarea 
-                  placeholder="Subtitle detail description..." 
+                  placeholder="Deskripsi singkat..." 
                   value={subtitle} onChange={(e) => setSubtitle(e.target.value)}
                   className="w-full bg-black border border-white/5 rounded-xl px-5 py-4 text-xs font-bold focus:border-blue-600 outline-none h-28 resize-none transition-colors"
                 />
@@ -420,12 +420,12 @@ const KelolaHero: React.FC = () => {
             </div>
           </div>
 
-          {/* SISI KANAN */}
+          {/* SISI KANAN: LIST SLIDES */}
           <div className="lg:col-span-8 space-y-4">
             {slides.length === 0 ? (
               <div className="text-center py-40 border-2 border-dashed border-zinc-900 rounded-[3rem] opacity-30">
                 <Layers size={64} className="mx-auto mb-6" />
-                <p className="font-black uppercase text-[10px] tracking-[0.4em]">Empty Gallery</p>
+                <p className="font-black uppercase text-[10px] tracking-[0.4em]">Gallery Kosong</p>
               </div>
             ) : (
               slides.map((slide, index) => (
@@ -457,6 +457,7 @@ const KelolaHero: React.FC = () => {
         </div>
       </div>
 
+      {/* NOTIFIKASI SUKSES */}
       <div className={`fixed bottom-12 left-1/2 -translate-x-1/2 transition-all duration-1000 z-[100] ${showSuccess ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-20 pointer-events-none'}`}>
         <div className="bg-blue-600 px-10 py-5 rounded-full flex items-center gap-4 shadow-2xl border border-white/20">
           <div className="bg-white/20 p-2 rounded-full text-white"><CheckCircle2 size={20} /></div>
