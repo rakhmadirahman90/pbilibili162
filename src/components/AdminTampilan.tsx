@@ -104,7 +104,6 @@ export default function AdminTampilan() {
     }
   };
 
-  // LOGIKA RESET BARU
   const handleResetToDefault = async () => {
     if (confirm("Kembalikan semua slide ke pengaturan awal (Default)? Ini akan menghapus slide kustom Anda.")) {
       setSlides(DEFAULT_SLIDES);
@@ -185,31 +184,49 @@ export default function AdminTampilan() {
     setSlides(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
   };
 
+  /**
+   * PERBAIKAN LOGIKA SIMPAN (UPSERT)
+   * Menambahkan 'onConflict' secara eksplisit untuk menangani unique constraint error
+   */
   const handleSave = async () => {
     setLoading(true);
     setMessage('Menyimpan ke database...');
     try {
       const now = new Date().toISOString();
 
-      const { error: heroErr } = await supabase.from('site_settings').upsert({ 
-        key: 'hero_config', 
-        value: { settings: heroSettings, slides: slides },
-        updated_at: now 
-      });
+      // Memastikan penggunaan upsert dengan definisi kolom 'key' sebagai target konflik
+      const { error: heroErr } = await supabase
+        .from('site_settings')
+        .upsert(
+          { 
+            key: 'hero_config', 
+            value: { settings: heroSettings, slides: slides },
+            updated_at: now 
+          }, 
+          { onConflict: 'key' } // Menghindari Duplicate Key Error
+        );
       if (heroErr) throw heroErr;
 
-      const { error: footerErr } = await supabase.from('site_settings').upsert({ 
-        key: 'footer_config', 
-        value: footerData,
-        updated_at: now 
-      });
+      const { error: footerErr } = await supabase
+        .from('site_settings')
+        .upsert(
+          { 
+            key: 'footer_config', 
+            value: footerData,
+            updated_at: now 
+          }, 
+          { onConflict: 'key' } // Menghindari Duplicate Key Error
+        );
       if (footerErr) throw footerErr;
 
       setMessage('BERHASIL! Data telah disinkronkan.');
       await fetchData(); 
       setTimeout(() => setMessage(''), 3000);
     } catch (err: any) {
-      alert("Simpan gagal: " + err.message);
+      console.error("Save error:", err);
+      // Pesan error lebih deskriptif untuk user
+      alert(`Simpan gagal: ${err.message}. Pastikan koneksi internet stabil.`);
+      setMessage('Gagal menyimpan.');
     } finally {
       setLoading(false);
     }
