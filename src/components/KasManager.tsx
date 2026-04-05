@@ -8,7 +8,6 @@ import {
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// URL Logo PB BILI BILI 162
 const PB_LOGO_URL = "https://missjyvqfehamtpyodjr.supabase.co/storage/v1/object/public/assets/logo1.png";
 
 const DAFTAR_PEMASUKAN = [
@@ -43,9 +42,8 @@ export default function KasManager() {
   const [kasData, setKasData] = useState<KasEntry[]>([]);
   const [atlets, setAtlets] = useState<Atlet[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState(''); // State Baru untuk Pencarian
+  const [searchTerm, setSearchTerm] = useState(''); 
   
-  // --- State Pagination ---
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -72,7 +70,6 @@ export default function KasManager() {
     jenis_transaksi: DAFTAR_PEMASUKAN.includes(item.kategori) ? ('Masuk' as const) : item.jenis_transaksi
   }));
 
-  // --- Filter Logic (Tanggal + Pencarian) ---
   const filteredData = normalizedData.filter(item => {
     const matchDate = item.tanggal_transaksi >= startDate && item.tanggal_transaksi <= endDate;
     const matchSearch = 
@@ -88,7 +85,7 @@ export default function KasManager() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [startDate, endDate, searchTerm]); // Reset ke hal 1 jika pencarian berubah
+  }, [startDate, endDate, searchTerm]);
 
   const stats = filteredData.reduce((acc, curr) => {
     if (curr.jenis_transaksi === 'Masuk') acc.masuk += curr.jumlah_bayar;
@@ -99,6 +96,14 @@ export default function KasManager() {
   const totalSaldoGlobal = normalizedData.reduce((acc, curr) => {
     return curr.jenis_transaksi === 'Masuk' ? acc + curr.jumlah_bayar : acc - curr.jumlah_bayar;
   }, 0);
+
+  // LOGIKA BARU: Menghitung saldo akhir tepat pada tanggal 'endDate'
+  // Ini mengambil semua transaksi dari awal waktu sampai tanggal akhir yang dipilih user
+  const saldoAkhirKumulatif = normalizedData
+    .filter(item => item.tanggal_transaksi <= endDate)
+    .reduce((acc, curr) => {
+      return curr.jenis_transaksi === 'Masuk' ? acc + curr.jumlah_bayar : acc - curr.jumlah_bayar;
+    }, 0);
 
   const getTransparentImageData = (url: string): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -169,15 +174,20 @@ export default function KasManager() {
       });
 
       const finalY = (doc as any).lastAutoTable.finalY + 10;
-      doc.setDrawColor(230, 230, 230).setFillColor(248, 250, 252).roundedRect(120, finalY, 75, 30, 2, 2, 'FD');
+      doc.setDrawColor(230, 230, 230).setFillColor(248, 250, 252).roundedRect(110, finalY, 85, 30, 2, 2, 'FD');
       doc.setFontSize(9).setFont("helvetica", "bold").setTextColor(50);
-      doc.text(`Total Pemasukan:`, 125, finalY + 7);
+      
+      doc.text(`Total Pemasukan:`, 115, finalY + 7);
       doc.setTextColor(16, 185, 129).text(`Rp ${stats.masuk.toLocaleString()}`, 190, finalY + 7, { align: 'right' });
-      doc.setTextColor(50).text(`Total Pengeluaran:`, 125, finalY + 14);
+      
+      doc.setTextColor(50).text(`Total Pengeluaran:`, 115, finalY + 14);
       doc.setTextColor(239, 68, 68).text(`Rp ${stats.keluar.toLocaleString()}`, 190, finalY + 14, { align: 'right' });
-      doc.setDrawColor(200).line(125, finalY + 18, 190, finalY + 18);
-      doc.setTextColor(30, 64, 175).text(`Saldo Periode Ini:`, 125, finalY + 24);
-      doc.text(`Rp ${(stats.masuk - stats.keluar).toLocaleString()}`, 190, finalY + 24, { align: 'right' });
+      
+      doc.setDrawColor(200).line(115, finalY + 18, 190, finalY + 18);
+      
+      // PERBAIKAN: Menggunakan Saldo Kumulatif sampai tanggal endDate
+      doc.setTextColor(30, 64, 175).text(`Saldo Akhir Kas:`, 115, finalY + 24);
+      doc.text(`Rp ${saldoAkhirKumulatif.toLocaleString()}`, 190, finalY + 24, { align: 'right' });
 
       const signY = finalY + 50;
       doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(0);
@@ -268,7 +278,6 @@ export default function KasManager() {
 
   return (
     <div className="p-6 lg:p-10 bg-[#050505] min-h-screen text-white font-sans">
-      {/* Header UI */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10">
         <div>
           <div className="flex items-center gap-3 mb-2">
@@ -278,7 +287,6 @@ export default function KasManager() {
           <p className="text-slate-500 text-[10px] font-bold tracking-[0.3em] uppercase ml-1">PB. BILI BILI 162 FINANCIAL HUB</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {/* SEARCH BAR BARU */}
           <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-2 rounded-xl focus-within:border-blue-500/50 transition-all w-full lg:w-64">
              <Search size={16} className="text-blue-400" />
              <input 
@@ -303,7 +311,6 @@ export default function KasManager() {
         </div>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
         <div className="bg-emerald-500/10 border border-emerald-500/20 p-6 rounded-[2rem]">
           <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2 flex items-center gap-2"><ArrowUpCircle size={14}/> Total Masuk (Filtered)</p>
@@ -320,7 +327,6 @@ export default function KasManager() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Form Section */}
         <div className="lg:col-span-4">
           <div className="bg-white/[0.03] border border-white/5 p-8 rounded-[2.5rem] sticky top-10">
             <h3 className="text-blue-400 font-black italic uppercase tracking-tighter text-xl mb-6 flex items-center gap-2">
@@ -397,7 +403,6 @@ export default function KasManager() {
           </div>
         </div>
 
-        {/* Ledger Section */}
         <div className="lg:col-span-8">
           <div className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] overflow-hidden flex flex-col h-full">
             <div className="p-6 border-b border-white/5 flex items-center justify-between">
@@ -460,7 +465,6 @@ export default function KasManager() {
               </table>
             </div>
 
-            {/* Pagination Controls */}
             {totalPages > 1 && (
               <div className="p-6 border-t border-white/5 flex items-center justify-between bg-black/20">
                 <button 
