@@ -43,6 +43,7 @@ export default function KasManager() {
   const [kasData, setKasData] = useState<KasEntry[]>([]);
   const [atlets, setAtlets] = useState<Atlet[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState(''); // State Baru untuk Pencarian
   
   // --- State Pagination ---
   const [currentPage, setCurrentPage] = useState(1);
@@ -71,8 +72,13 @@ export default function KasManager() {
     jenis_transaksi: DAFTAR_PEMASUKAN.includes(item.kategori) ? ('Masuk' as const) : item.jenis_transaksi
   }));
 
+  // --- Filter Logic (Tanggal + Pencarian) ---
   const filteredData = normalizedData.filter(item => {
-    return item.tanggal_transaksi >= startDate && item.tanggal_transaksi <= endDate;
+    const matchDate = item.tanggal_transaksi >= startDate && item.tanggal_transaksi <= endDate;
+    const matchSearch = 
+      item.nama_pembayar.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.kategori.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchDate && matchSearch;
   });
 
   const totalPages = Math.ceil(filteredData.length / itemsPerPage);
@@ -82,7 +88,7 @@ export default function KasManager() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [startDate, endDate]);
+  }, [startDate, endDate, searchTerm]); // Reset ke hal 1 jika pencarian berubah
 
   const stats = filteredData.reduce((acc, curr) => {
     if (curr.jenis_transaksi === 'Masuk') acc.masuk += curr.jumlah_bayar;
@@ -113,41 +119,30 @@ export default function KasManager() {
     });
   };
 
-  // --- OPTIMASI EXPORT PDF ---
   const exportToPDF = async () => {
     try {
       const doc = new jsPDF('p', 'mm', 'a4');
       const fullDateStr = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
       const locationDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
-      // 1. Kop Surat & Logo
       try {
         const transparentLogo = await getTransparentImageData(PB_LOGO_URL);
         doc.addImage(transparentLogo, 'PNG', 15, 12, 25, 25);
-      } catch (e) { 
-        console.error("Logo gagal dimuat", e); 
-      }
+      } catch (e) { console.error("Logo gagal dimuat", e); }
 
-      // Header Text (Posisi diatur agar rapi di samping logo)
       doc.setFont("helvetica", "bold").setFontSize(22).setTextColor(30, 64, 175);
       doc.text('PB. BILI BILI 162', 45, 20);
-      
       doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(80, 80, 80);
       doc.text('Sekretariat: Jl. Andi Makkasau No.171, Ujung Lare, Kec. Soreang, Parepare 91131', 45, 26);
       doc.text('Email: pbbilibili162@gmail.com | Mobile: +62 812 902 7234', 45, 31);
-      
-      // Garis Pemisah (Double Line Effect)
       doc.setDrawColor(30, 64, 175).setLineWidth(0.8).line(15, 40, 195, 40);
       doc.setDrawColor(150, 150, 150).setLineWidth(0.2).line(15, 41.5, 195, 41.5);
 
-      // 2. Judul Laporan & Periode
       doc.setFont("helvetica", "bold").setFontSize(14).setTextColor(0);
       doc.text('LAPORAN PERTANGGUNGJAWABAN KEUANGAN KAS', 105, 52, { align: 'center' });
-      
       doc.setFont("helvetica", "normal").setFontSize(10).setTextColor(100);
       doc.text(`Periode: ${startDate} s/d ${endDate}`, 105, 58, { align: 'center' });
 
-      // 3. Data Tabel dengan Kolom "Jenis" dan "Kategori" Lengkap
       const tableRows = filteredData.map(item => [
         new Date(item.tanggal_transaksi).toLocaleDateString('id-ID'),
         item.nama_pembayar || '-',
@@ -164,14 +159,8 @@ export default function KasManager() {
         theme: 'striped',
         headStyles: { fillColor: [30, 64, 175], textColor: 255, fontSize: 9, fontStyle: 'bold', halign: 'center' },
         bodyStyles: { fontSize: 8, textColor: 50 },
-        columnStyles: {
-          0: { halign: 'center', cellWidth: 25 },
-          2: { halign: 'center', cellWidth: 20 },
-          4: { halign: 'center', cellWidth: 20 },
-          5: { halign: 'right', fontStyle: 'bold' }
-        },
+        columnStyles: { 0: { halign: 'center', cellWidth: 25 }, 2: { halign: 'center', cellWidth: 20 }, 4: { halign: 'center', cellWidth: 20 }, 5: { halign: 'right', fontStyle: 'bold' } },
         didParseCell: (data) => {
-            // Warnai teks Masuk/Keluar
             if (data.section === 'body' && data.column.index === 2) {
                 if (data.cell.raw === 'Masuk') data.cell.styles.textColor = [16, 185, 129];
                 if (data.cell.raw === 'Keluar') data.cell.styles.textColor = [239, 68, 68];
@@ -179,42 +168,29 @@ export default function KasManager() {
         }
       });
 
-      // 4. Ringkasan Finansial (Summary Box)
       const finalY = (doc as any).lastAutoTable.finalY + 10;
-      
-      // Kotak Ringkasan
       doc.setDrawColor(230, 230, 230).setFillColor(248, 250, 252).roundedRect(120, finalY, 75, 30, 2, 2, 'FD');
-      
       doc.setFontSize(9).setFont("helvetica", "bold").setTextColor(50);
       doc.text(`Total Pemasukan:`, 125, finalY + 7);
       doc.setTextColor(16, 185, 129).text(`Rp ${stats.masuk.toLocaleString()}`, 190, finalY + 7, { align: 'right' });
-      
       doc.setTextColor(50).text(`Total Pengeluaran:`, 125, finalY + 14);
       doc.setTextColor(239, 68, 68).text(`Rp ${stats.keluar.toLocaleString()}`, 190, finalY + 14, { align: 'right' });
-      
       doc.setDrawColor(200).line(125, finalY + 18, 190, finalY + 18);
-      
       doc.setTextColor(30, 64, 175).text(`Saldo Periode Ini:`, 125, finalY + 24);
       doc.text(`Rp ${(stats.masuk - stats.keluar).toLocaleString()}`, 190, finalY + 24, { align: 'right' });
 
-      // 5. Tanda Tangan (Footer)
       const signY = finalY + 50;
       doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(0);
       doc.text(`Parepare, ${locationDate}`, 150, signY - 8); 
-      
       doc.setFont("helvetica", "bold").text('Mengetahui,', 15, signY);
       doc.text('Ketua PB. Bili Bili 162', 15, signY + 6);
       doc.text('H. WAWAN', 15, signY + 32);
       doc.setDrawColor(0).setLineWidth(0.3).line(15, signY + 33, 60, signY + 33);
-
       doc.text('Bendahara Umum,', 150, signY + 6);
       doc.text('MUH. NUR', 150, signY + 32);
       doc.line(150, signY + 33, 195, signY + 33);
-
-      // Metadata Footer
       doc.setFontSize(8).setFont("helvetica", "italic").setTextColor(150);
       doc.text(`* Dokumen ini digenerate secara otomatis melalui Treasury Master System pada ${fullDateStr}`, 15, 285);
-
       doc.save(`LPJ_KAS_PB162_${startDate}_TO_${endDate}.pdf`);
     } catch (error) { 
       console.error(error);
@@ -250,11 +226,7 @@ export default function KasManager() {
         }));
         setAtlets(formattedAtlets);
       }
-    } catch (error) { 
-      console.error(error); 
-    } finally { 
-      setLoading(false); 
-    }
+    } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
   useEffect(() => { fetchData(); }, []);
@@ -276,11 +248,7 @@ export default function KasManager() {
       setFormData(initialForm); 
       fetchData(); 
       alert('Data Berhasil Disimpan!');
-    } catch (error: any) { 
-      alert(error.message); 
-    } finally { 
-      setSaving(false); 
-    }
+    } catch (error: any) { alert(error.message); } finally { setSaving(false); }
   };
 
   const handleEdit = (item: KasEntry) => {
@@ -310,6 +278,19 @@ export default function KasManager() {
           <p className="text-slate-500 text-[10px] font-bold tracking-[0.3em] uppercase ml-1">PB. BILI BILI 162 FINANCIAL HUB</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {/* SEARCH BAR BARU */}
+          <div className="flex items-center gap-3 bg-white/5 border border-white/10 px-4 py-2 rounded-xl focus-within:border-blue-500/50 transition-all w-full lg:w-64">
+             <Search size={16} className="text-blue-400" />
+             <input 
+               type="text" 
+               placeholder="Cari Atlet / Kategori..." 
+               className="bg-transparent text-[11px] font-bold outline-none text-white w-full placeholder:text-zinc-600"
+               value={searchTerm}
+               onChange={(e) => setSearchTerm(e.target.value)}
+             />
+             {searchTerm && <X size={14} className="text-zinc-500 cursor-pointer hover:text-white" onClick={() => setSearchTerm('')} />}
+          </div>
+
           <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-xl">
              <Calendar size={14} className="text-blue-400" />
              <input type="date" className="bg-transparent text-[10px] font-bold outline-none text-white w-[100px]" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
@@ -325,11 +306,11 @@ export default function KasManager() {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
         <div className="bg-emerald-500/10 border border-emerald-500/20 p-6 rounded-[2rem]">
-          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2 flex items-center gap-2"><ArrowUpCircle size={14}/> Total Masuk (Periode)</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2 flex items-center gap-2"><ArrowUpCircle size={14}/> Total Masuk (Filtered)</p>
           <h2 className="text-2xl font-black italic text-emerald-400">Rp {stats.masuk.toLocaleString()}</h2>
         </div>
         <div className="bg-red-500/10 border border-red-500/20 p-6 rounded-[2rem]">
-          <p className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-2 flex items-center gap-2"><ArrowDownCircle size={14}/> Total Keluar (Periode)</p>
+          <p className="text-[10px] font-black uppercase tracking-widest text-red-500 mb-2 flex items-center gap-2"><ArrowDownCircle size={14}/> Total Keluar (Filtered)</p>
           <h2 className="text-2xl font-black italic text-red-400">Rp {stats.keluar.toLocaleString()}</h2>
         </div>
         <div className="bg-blue-500/10 border border-blue-500/20 p-6 rounded-[2rem]">
@@ -440,7 +421,16 @@ export default function KasManager() {
                   {loading ? (
                     <tr><td colSpan={4} className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-500" /></td></tr>
                   ) : currentItems.length === 0 ? (
-                    <tr><td colSpan={4} className="p-20 text-center text-slate-500 text-xs uppercase tracking-widest font-bold">No Data Available</td></tr>
+                    <tr>
+                      <td colSpan={4} className="p-20 text-center">
+                        <div className="flex flex-col items-center gap-3">
+                          <Search size={40} className="text-zinc-800" />
+                          <p className="text-slate-500 text-xs uppercase tracking-widest font-bold">
+                            {searchTerm ? `Tidak ditemukan hasil untuk "${searchTerm}"` : 'Belum Ada Data'}
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
                   ) : currentItems.map((item) => {
                     const isMasuk = item.jenis_transaksi === 'Masuk';
                     return (
@@ -480,12 +470,12 @@ export default function KasManager() {
                 >
                   <ChevronLeft size={14} /> Prev
                 </button>
-                <div className="flex gap-1">
+                <div className="flex gap-1 overflow-x-auto max-w-[150px] md:max-w-none no-scrollbar">
                    {Array.from({ length: totalPages }, (_, i) => (
                      <button 
                         key={i + 1}
                         onClick={() => setCurrentPage(i + 1)}
-                        className={`w-8 h-8 rounded-lg text-[10px] font-bold transition-all ${currentPage === i + 1 ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}
+                        className={`min-w-[32px] h-8 rounded-lg text-[10px] font-bold transition-all ${currentPage === i + 1 ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-500 hover:bg-white/10'}`}
                      >
                        {i + 1}
                      </button>

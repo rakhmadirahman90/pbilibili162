@@ -376,7 +376,7 @@ export default function PublicKasView() {
 
       {/* Footer Info */}
       <div className="mt-12 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] font-black uppercase tracking-[0.4em] text-slate-400">
-        <p>© 2026 PB. BILI BILI 162 • DIVISI KEUANGAN TRANSPARAN</p>
+        <p>© 2026 PB. BILI BILI 162</p>
         <p className="flex items-center gap-2 italic">
           <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" /> 
           Verified by Admin
