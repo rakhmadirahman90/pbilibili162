@@ -536,10 +536,10 @@ export default function AdminRanking() {
                     value={formData.seed}
                     onChange={(e) => setFormData({ ...formData, seed: e.target.value })}
                   >
-                    <option value="Seed A">Seed A</option>
-                    <option value="Seed B+">Seed B+</option>
-                    <option value="Seed B">Seed B</option>
-                    <option value="Seed C">Seed C</option>
+                    <option value="Seed A">A</option>
+                    <option value="Seed B+">B+</option>
+                    <option value="Seed B">B</option>
+                    <option value="Seed C">C</option>
                     <option value="Non-Seed">Non-Seed</option>
                   </select>
                 </div>
