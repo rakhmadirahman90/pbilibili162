@@ -15,20 +15,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
-  FileSpreadsheet, // Icon untuk Excel
-  FileText,        // Icon untuk PDF
+  Download,
+  FileText,
+  Table as TableIcon
 } from 'lucide-react';
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
-
-// Interface untuk jsPDF autotable
-declare module 'jspdf' {
-  interface jsPDF {
-    autoTable: (options: any) => jsPDF;
-  }
-}
 
 interface Ranking {
   id: string;
@@ -36,9 +30,9 @@ interface Ranking {
   player_name: string;
   category: string;
   seed: string;
-  total_points: number; 
-  bonus: number; 
-  poin: number; 
+  total_points: number;
+  bonus: number;
+  poin: number;
   photo_url?: string;
   updated_at?: string;
 }
@@ -51,6 +45,7 @@ export default function AdminRanking() {
   const [isUploading, setIsUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSeed, setSelectedSeed] = useState('Semua');
+  const [selectedCategory, setSelectedCategory] = useState('Semua'); // Tambahan filter kategori
   const [editingId, setEditingId] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -69,61 +64,49 @@ export default function AdminRanking() {
     photo_url: '',
   });
 
-  // --- FUNGSI EXPORT EXCEL ---
+  // --- FUNGSI EXPORT ---
   const exportToExcel = () => {
     const fileType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8";
     const fileExtension = ".xlsx";
-    
-    const dataToExport = filteredRankings.map((item, index) => ({
-      Rank: index + 1,
-      Nama: item.player_name,
-      Kategori: item.category,
-      Seed: item.seed,
-      "Base Points": item.poin,
-      "Added Points": item.bonus,
-      "Total Points": item.total_points
+    const exportData = filteredRankings.map((r, idx) => ({
+      Rank: idx + 1,
+      Nama: r.player_name,
+      Kategori: r.category,
+      Seed: r.seed,
+      "Base Points": r.poin,
+      "Added Points": r.bonus,
+      "Total Points": r.total_points
     }));
 
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = { Sheets: { data: ws }, SheetNames: ["data"] };
     const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const data = new Blob([excelBuffer], { type: fileType });
     saveAs(data, "Ranking_PB_Bilibili_162" + fileExtension);
   };
 
-  // --- FUNGSI EXPORT PDF ---
   const exportToPDF = () => {
-    const doc = new jsPDF();
-    const tableColumn = ["Rank", "Nama Atlet", "Kategori", "Seed", "Base", "Added", "Total"];
-    const tableRows: any[] = [];
-
-    filteredRankings.forEach((item, index) => {
-      const rowData = [
-        index + 1,
-        item.player_name,
-        item.category,
-        item.seed,
-        item.poin,
-        item.bonus,
-        item.total_points
-      ];
-      tableRows.push(rowData);
-    });
-
-    doc.setFontSize(18);
-    doc.text("DATA RANKING PB BILIBILI 162", 14, 22);
-    doc.setFontSize(11);
-    doc.setTextColor(100);
-    doc.text(`Dicetak pada: ${new Date().toLocaleString()}`, 14, 30);
+    const doc = new jsPDF() as any;
+    doc.text("DATA RANKING ATLET PB BILIBILI 162", 14, 15);
+    
+    const tableColumn = ["Rank", "Nama Atlet", "Kategori", "Seed", "Base", "Bonus", "Total"];
+    const tableRows = filteredRankings.map((r, idx) => [
+      idx + 1,
+      r.player_name,
+      r.category,
+      r.seed,
+      r.poin,
+      r.bonus,
+      r.total_points
+    ]);
 
     doc.autoTable({
       head: [tableColumn],
       body: tableRows,
-      startY: 35,
+      startY: 20,
       theme: 'grid',
-      headStyles: { fillColor: [37, 99, 235] } // Blue-600
+      headStyles: { fillColor: [37, 99, 235] }
     });
-
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
 
@@ -143,15 +126,10 @@ export default function AdminRanking() {
 
       const finalDataArray = (statsData || [])
         .map((stat) => {
-          const profile = (pendaftaranData || []).find(
-            (p) => p.id === stat.pendaftaran_id
-          );
-
+          const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
           if (profile) {
             const base = Number(stat.points) || 0;
             const added = Number(stat.total_points) || 0;
-            const total = base + added;
-
             return {
               pendaftaran_id: profile.id,
               player_name: profile.nama.trim().toUpperCase(),
@@ -160,7 +138,7 @@ export default function AdminRanking() {
               photo_url: profile.foto_url || null,
               poin: base,
               bonus: added,
-              total_points: total,
+              total_points: base + added,
               updated_at: new Date().toISOString(),
             };
           }
@@ -169,14 +147,7 @@ export default function AdminRanking() {
         .filter(Boolean);
 
       if (finalDataArray.length > 0) {
-        const { error: upsertError } = await supabase
-          .from('rankings')
-          .upsert(finalDataArray, {
-            onConflict: 'player_name',
-            ignoreDuplicates: false,
-          });
-
-        if (upsertError) throw upsertError;
+        await supabase.from('rankings').upsert(finalDataArray, { onConflict: 'player_name' });
         return true;
       }
       return false;
@@ -223,16 +194,9 @@ export default function AdminRanking() {
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
       const filePath = `ranking-photos/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('images')
-        .upload(filePath, file);
-
+      const { error: uploadError } = await supabase.storage.from('images').upload(filePath, file);
       if (uploadError) throw uploadError;
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from('images').getPublicUrl(filePath);
+      const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(filePath);
       setFormData((prev) => ({ ...prev, photo_url: publicUrl }));
       setSuccessMsg('Foto berhasil diunggah!');
     } catch (err: any) {
@@ -246,14 +210,11 @@ export default function AdminRanking() {
     e.preventDefault();
     setFormError(null);
     setIsSaving(true);
-
     try {
       if (!formData.player_name) throw new Error('Nama atlet wajib diisi');
-
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
       const added = Number(formData.bonus) || 0;
-
       const payload = {
         player_name: cleanName,
         category: formData.category,
@@ -266,20 +227,13 @@ export default function AdminRanking() {
 
       let error;
       if (editingId) {
-        const { error: updateError } = await supabase
-          .from('rankings')
-          .update(payload)
-          .eq('id', editingId);
+        const { error: updateError } = await supabase.from('rankings').update(payload).eq('id', editingId);
         error = updateError;
       } else {
-        const { error: upsertError } = await supabase
-          .from('rankings')
-          .upsert([payload], { onConflict: 'player_name' });
+        const { error: upsertError } = await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
         error = upsertError;
       }
-
       if (error) throw error;
-
       setIsModalOpen(false);
       setEditingId(null);
       setSuccessMsg('Data berhasil disimpan!');
@@ -303,22 +257,21 @@ export default function AdminRanking() {
     }
   };
 
-  const filteredRankings = rankings.filter(
-    (r) =>
-      (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase()) &&
-      (selectedSeed === 'Semua' || r.seed === selectedSeed)
-  );
+  // --- LOGIKA FILTER DIPERBAIKI ---
+  const filteredRankings = rankings.filter((r) => {
+    const matchSearch = (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const matchSeed = selectedSeed === 'Semua' || r.seed === selectedSeed;
+    const matchCategory = selectedCategory === 'Semua' || r.category === selectedCategory;
+    return matchSearch && matchSeed && matchCategory;
+  });
 
   const totalPages = Math.ceil(filteredRankings.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedRankings = filteredRankings.slice(
-    startIndex,
-    startIndex + itemsPerPage
-  );
+  const paginatedRankings = filteredRankings.slice(startIndex, startIndex + itemsPerPage);
 
   return (
     <div className="min-h-screen bg-[#050505] text-white p-4 md:p-12 font-sans selection:bg-blue-500/30">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         {successMsg && (
           <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[150] bg-blue-600 text-white px-6 py-3 rounded-full font-bold text-xs uppercase flex items-center gap-3 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
             <Zap size={16} className="fill-white" /> {successMsg}
@@ -341,41 +294,35 @@ export default function AdminRanking() {
           <div className="flex flex-wrap gap-3 w-full md:w-auto">
             <button
               onClick={exportToExcel}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600/10 border border-emerald-500/20 px-4 py-4 rounded-xl font-bold uppercase text-[10px] hover:bg-emerald-600 transition-all text-emerald-500 hover:text-white"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 px-4 py-3 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-emerald-600/20"
             >
-              <FileSpreadsheet size={14} /> Excel
+              <TableIcon size={14} /> Excel
             </button>
             <button
               onClick={exportToPDF}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-red-600/10 border border-red-500/20 px-4 py-4 rounded-xl font-bold uppercase text-[10px] hover:bg-red-600 transition-all text-red-500 hover:text-white"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-red-600 hover:bg-red-500 px-4 py-3 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-red-600/20"
             >
               <FileText size={14} /> PDF
             </button>
             <button
               onClick={fetchRankings}
               disabled={loading}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-900 border border-white/10 px-6 py-4 rounded-xl font-bold uppercase text-[10px] hover:bg-zinc-800 transition-all text-zinc-300"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-900 border border-white/10 px-4 py-3 rounded-xl font-bold uppercase text-[10px] hover:bg-zinc-800 transition-all text-zinc-300"
             >
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              Sync
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Sync
             </button>
             <button
               onClick={() => {
                 setEditingId(null);
                 setFormData({
-                  player_name: '',
-                  category: 'Senior',
-                  seed: 'Seed A',
-                  total_points: 0,
-                  bonus: 0,
-                  poin: 0,
-                  photo_url: '',
+                  player_name: '', category: 'Senior', seed: 'Seed A',
+                  total_points: 0, bonus: 0, poin: 0, photo_url: '',
                 });
                 setIsModalOpen(true);
               }}
               className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-4 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20"
             >
-              <Plus size={14} /> Tambah
+              <Plus size={14} /> Tambah Atlet
             </button>
           </div>
         </div>
@@ -392,6 +339,16 @@ export default function AdminRanking() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
+          <select
+            className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer"
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+          >
+            <option value="Semua">SEMUA KATEGORI</option>
+            <option value="Senior">SENIOR</option>
+            <option value="Junior">JUNIOR</option>
+            <option value="Veteran">VETERAN</option>
+          </select>
           <select
             className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer"
             value={selectedSeed}
@@ -412,12 +369,12 @@ export default function AdminRanking() {
             <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
               <tr>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center w-20">Rank</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Nama Atlet</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Profil Atlet</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Kategori</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Seeded</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Base</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Added</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center">Total</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Base Points</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Added Points</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center">Total Ranking</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest text-right">Aksi</th>
               </tr>
             </thead>
@@ -445,31 +402,28 @@ export default function AdminRanking() {
                             </div>
                           )}
                         </div>
-                        <p className="font-black uppercase italic text-sm text-white group-hover:text-blue-400 leading-none">
-                          {item.player_name}
-                        </p>
+                        <div>
+                          <p className="font-black uppercase italic text-sm text-white group-hover:text-blue-400 leading-none">
+                            {item.player_name}
+                          </p>
+                        </div>
                       </div>
                     </td>
-                    {/* PEMISAHAN KOLOM KATEGORI DAN SEEDED */}
                     <td className="p-5">
-                      <span className="px-3 py-1.5 bg-zinc-900 border border-white/5 rounded-lg text-[9px] font-black uppercase tracking-tighter text-zinc-400 group-hover:border-blue-500/30">
+                      <span className="bg-zinc-800 px-3 py-1 rounded-full text-[9px] font-bold text-zinc-300 uppercase">
                         {item.category}
                       </span>
                     </td>
                     <td className="p-5">
-                      <span className="px-3 py-1.5 bg-blue-600/10 border border-blue-500/20 rounded-lg text-[9px] font-black uppercase tracking-tighter text-blue-500">
+                      <span className="bg-blue-600/10 border border-blue-600/20 px-3 py-1 rounded-full text-[9px] font-bold text-blue-500 uppercase">
                         {item.seed}
                       </span>
                     </td>
                     <td className="p-5">
-                      <span className="text-zinc-400 font-bold text-xs">
-                        {(Number(item.poin) || 0).toLocaleString()}
-                      </span>
+                      <span className="text-zinc-400 font-bold text-xs">{(Number(item.poin) || 0).toLocaleString()}</span>
                     </td>
                     <td className="p-5">
-                      <span className="text-emerald-500 font-bold text-xs">
-                        +{(Number(item.bonus) || 0).toLocaleString()}
-                      </span>
+                      <span className="text-emerald-500 font-bold text-xs">+{(Number(item.bonus) || 0).toLocaleString()}</span>
                     </td>
                     <td className="p-5 text-center">
                       <span className="text-xl font-black text-white group-hover:text-blue-500 transition-colors">
@@ -478,11 +432,7 @@ export default function AdminRanking() {
                     </td>
                     <td className="p-5 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
                       <button
-                        onClick={() => {
-                          setEditingId(item.id);
-                          setFormData(item);
-                          setIsModalOpen(true);
-                        }}
+                        onClick={() => { setEditingId(item.id); setFormData(item); setIsModalOpen(true); }}
                         className="p-2.5 bg-zinc-900 hover:bg-blue-600 rounded-xl border border-white/5"
                       >
                         <Edit3 size={16} />
@@ -533,7 +483,7 @@ export default function AdminRanking() {
         )}
       </div>
 
-      {/* Modal Form */}
+      {/* Modal Form - Tetap Sama dengan Penyesuaian Style */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -546,6 +496,7 @@ export default function AdminRanking() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
+              {/* Profile Photo */}
               <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-3xl">
                 <div className="w-20 h-20 bg-zinc-900 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center">
                   {formData.photo_url ? (
@@ -556,16 +507,13 @@ export default function AdminRanking() {
                 </div>
                 <div className="flex-grow">
                   <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="bg-zinc-800 px-4 py-2 rounded-xl text-[10px] font-bold uppercase"
-                  >
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-zinc-800 px-4 py-2 rounded-xl text-[10px] font-bold uppercase">
                     {isUploading ? 'Uploading...' : 'Ganti Foto'}
                   </button>
                 </div>
               </div>
 
+              {/* Form Inputs */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2 col-span-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase">Nama Lengkap</label>
