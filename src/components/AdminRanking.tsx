@@ -18,7 +18,7 @@ import {
   Download,
   FileText,
   Table as TableIcon
-} from 'lucide-center'; // Pastikan lucide-react terpasang
+} from 'lucide-react'; // Pastikan lucide-react terpasang
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
