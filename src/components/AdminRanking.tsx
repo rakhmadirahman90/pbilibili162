@@ -15,18 +15,24 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
+  FileText,
+  Table as TableIcon,
 } from 'lucide-react';
+// Import untuk fitur Export
+import { saveAs } from 'file-saver';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
-// PERBAIKAN: Menyesuaikan Interface dengan kolom database yang digunakan (poin, bonus, total_points)
 interface Ranking {
   id: string;
   pendaftaran_id?: string;
   player_name: string;
   category: string;
   seed: string;
-  total_points: number; // Hasil Akhir
-  bonus: number; // Sama dengan total_points di tabel atlet_stats
-  poin: number; // Sama dengan points di tabel atlet_stats (Base Points)
+  total_points: number;
+  bonus: number;
+  poin: number;
   photo_url?: string;
   updated_at?: string;
 }
@@ -53,15 +59,73 @@ export default function AdminRanking() {
     seed: 'Seed A',
     total_points: 0,
     bonus: 0,
-    poin: 0, // Menggunakan properti 'poin'
+    poin: 0,
     photo_url: '',
   });
+
+  // --- FITUR EXPORT ---
+  const exportToExcel = () => {
+    const fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8';
+    const fileExtension = '.xlsx';
+    const fileName = `RANKING_PB_BILIBILI_${new Date().toLocaleDateString()}`;
+
+    const exportData = filteredRankings.map((item, index) => ({
+      Rank: index + 1,
+      Nama: item.player_name,
+      Kategori: item.category,
+      Seed: item.seed,
+      'Base Points': item.poin,
+      'Added Points': item.bonus,
+      'Total Points': item.total_points,
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = { Sheets: { data: ws }, SheetNames: ['data'] };
+    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const data = new Blob([excelBuffer], { type: fileType });
+    saveAs(data, fileName + fileExtension);
+    setSuccessMsg('Excel berhasil diunduh!');
+  };
+
+  const exportToPDF = () => {
+    const doc = jsPDF();
+    const tableColumn = ["Rank", "Nama Atlet", "Kategori", "Seed", "Base", "Added", "Total"];
+    const tableRows: any[] = [];
+
+    filteredRankings.forEach((item, index) => {
+      const rowData = [
+        index + 1,
+        item.player_name,
+        item.category,
+        item.seed,
+        item.poin.toLocaleString(),
+        item.bonus.toLocaleString(),
+        item.total_points.toLocaleString(),
+      ];
+      tableRows.push(rowData);
+    });
+
+    doc.setFontSize(18);
+    doc.text("LAPORAN RANKING ATLET PB BILIBILI 162", 14, 22);
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    doc.text(`Dicetak pada: ${new Date().toLocaleString()}`, 14, 30);
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 35,
+      theme: 'grid',
+      headStyles: { fillColor: [37, 99, 235] }
+    });
+
+    doc.save(`RANKING_PB_BILIBILI_${Date.now()}.pdf`);
+    setSuccessMsg('PDF berhasil diunduh!');
+  };
 
   // --- FUNGSI SINKRONISASI ---
   const autoSyncData = useCallback(async () => {
     try {
-      console.log('Memulai Sinkronisasi...');
-
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
@@ -91,7 +155,6 @@ export default function AdminRanking() {
               category: profile.kategori || 'Senior',
               seed: stat.seed || 'Non-Seed',
               photo_url: profile.foto_url || null,
-              // PERBAIKAN: Mapping ke nama kolom database tabel 'rankings'
               poin: base,
               bonus: added,
               total_points: total,
@@ -111,7 +174,6 @@ export default function AdminRanking() {
           });
 
         if (upsertError) throw upsertError;
-        console.log('Data Berhasil Disinkronkan');
         return true;
       }
       return false;
@@ -273,14 +335,28 @@ export default function AdminRanking() {
             </div>
           </div>
 
-          <div className="flex gap-3 w-full md:w-auto">
+          <div className="flex flex-wrap gap-3 w-full md:w-auto">
+            {/* Tombol Export */}
+            <button 
+              onClick={exportToExcel}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600/10 border border-emerald-500/20 px-4 py-3 rounded-xl font-bold uppercase text-[9px] hover:bg-emerald-600 transition-all text-emerald-500 hover:text-white"
+            >
+              <TableIcon size={14} /> Excel
+            </button>
+            <button 
+              onClick={exportToPDF}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-red-600/10 border border-red-500/20 px-4 py-3 rounded-xl font-bold uppercase text-[9px] hover:bg-red-600 transition-all text-red-500 hover:text-white"
+            >
+              <FileText size={14} /> PDF
+            </button>
+
             <button
               onClick={fetchRankings}
               disabled={loading}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-900 border border-white/10 px-6 py-4 rounded-xl font-bold uppercase text-[10px] hover:bg-zinc-800 transition-all text-zinc-300"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-900 border border-white/10 px-4 py-3 rounded-xl font-bold uppercase text-[9px] hover:bg-zinc-800 transition-all text-zinc-300"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              Sinkronisasi Data
+              Sync
             </button>
             <button
               onClick={() => {
@@ -296,7 +372,7 @@ export default function AdminRanking() {
                 });
                 setIsModalOpen(true);
               }}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-4 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20"
             >
               <Plus size={14} /> Tambah Atlet
             </button>
@@ -334,45 +410,28 @@ export default function AdminRanking() {
 
         {/* Table Section */}
         <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
-          <table className="w-full text-left min-w-[900px]">
+          <table className="w-full text-left min-w-[950px]">
             <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
               <tr>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center w-20">
-                  Rank
-                </th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">
-                  Profil Atlet
-                </th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">
-                  Base Points
-                </th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">
-                  Added Points
-                </th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center">
-                  Total Ranking
-                </th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-right">
-                  Aksi
-                </th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center w-20">Rank</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Profil Atlet</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Kategori / Seed</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Base Points</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Added Points</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center">Total Ranking</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {loading ? (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse"
-                  >
+                  <td colSpan={7} className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse">
                     Memproses Data Ranking...
                   </td>
                 </tr>
               ) : paginatedRankings.length > 0 ? (
                 paginatedRankings.map((item, index) => (
-                  <tr
-                    key={item.id}
-                    className="hover:bg-white/[0.02] transition-all group"
-                  >
+                  <tr key={item.id} className="hover:bg-white/[0.02] transition-all group">
                     <td className="p-5 text-center font-black italic text-xl text-zinc-700 group-hover:text-blue-500">
                       {String(startIndex + index + 1).padStart(2, '0')}
                     </td>
@@ -380,11 +439,7 @@ export default function AdminRanking() {
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-zinc-800 rounded-full border border-white/10 overflow-hidden ring-2 ring-blue-600/20">
                           {item.photo_url ? (
-                            <img
-                              src={item.photo_url}
-                              className="w-full h-full object-cover"
-                              alt=""
-                            />
+                            <img src={item.photo_url} className="w-full h-full object-cover" alt="" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
                               <User size={20} className="text-zinc-600" />
@@ -395,22 +450,28 @@ export default function AdminRanking() {
                           <p className="font-black uppercase italic text-sm text-white group-hover:text-blue-400 leading-none">
                             {item.player_name}
                           </p>
-                          <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-tighter">
-                            {item.category} • {item.seed}
-                          </span>
                         </div>
                       </div>
                     </td>
                     <td className="p-5">
-                      {/* PERBAIKAN: Menggunakan properti 'poin' sesuai Interface */}
-                      <span className="text-zinc-400 font-bold text-xs">
-                        {(Number(item.poin) || 0).toLocaleString()}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className="px-2 py-1 bg-blue-600/10 text-blue-400 border border-blue-600/20 rounded text-[9px] font-black uppercase w-fit">
+                          {item.category}
+                        </span>
+                        <span className={`px-2 py-1 border rounded text-[9px] font-black uppercase w-fit ${
+                          item.seed.includes('A') ? 'bg-yellow-600/10 text-yellow-500 border-yellow-500/20' : 
+                          item.seed.includes('B') ? 'bg-emerald-600/10 text-emerald-500 border-emerald-500/20' :
+                          'bg-zinc-600/10 text-zinc-500 border-zinc-500/20'
+                        }`}>
+                          {item.seed}
+                        </span>
+                      </div>
                     </td>
                     <td className="p-5">
-                      <span className="text-emerald-500 font-bold text-xs">
-                        +{(Number(item.bonus) || 0).toLocaleString()}
-                      </span>
+                      <span className="text-zinc-400 font-bold text-xs">{(Number(item.poin) || 0).toLocaleString()}</span>
+                    </td>
+                    <td className="p-5">
+                      <span className="text-emerald-500 font-bold text-xs">+{(Number(item.bonus) || 0).toLocaleString()}</span>
                     </td>
                     <td className="p-5 text-center">
                       <span className="text-xl font-black text-white group-hover:text-blue-500 transition-colors">
@@ -439,10 +500,7 @@ export default function AdminRanking() {
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="p-20 text-center text-zinc-500 uppercase font-bold text-xs"
-                  >
+                  <td colSpan={7} className="p-20 text-center text-zinc-500 uppercase font-bold text-xs">
                     Tidak ada data ditemukan
                   </td>
                 </tr>
@@ -496,23 +554,13 @@ export default function AdminRanking() {
               <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-3xl">
                 <div className="w-20 h-20 bg-zinc-900 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center">
                   {formData.photo_url ? (
-                    <img
-                      src={formData.photo_url}
-                      className="w-full h-full object-cover"
-                      alt=""
-                    />
+                    <img src={formData.photo_url} className="w-full h-full object-cover" alt="" />
                   ) : (
                     <Camera size={24} className="text-zinc-700" />
                   )}
                 </div>
                 <div className="flex-grow">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    accept="image/*"
-                  />
+                  <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
@@ -525,46 +573,35 @@ export default function AdminRanking() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2 col-span-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase">
-                    Nama Lengkap
-                  </label>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase">Nama Lengkap</label>
                   <input
                     required
                     className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none focus:border-blue-600 font-black uppercase text-sm"
                     value={formData.player_name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, player_name: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, player_name: e.target.value })}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase">
-                    Kategori
-                  </label>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase">Kategori</label>
                   <select
                     className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none font-bold text-xs"
                     value={formData.category}
-                    onChange={(e) =>
-                      setFormData({ ...formData, category: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   >
                     <option value="Senior">Senior</option>
                     <option value="Junior">Junior</option>
                     <option value="Veteran">Veteran</option>
+                    <option value="Dewasa / Umum">Dewasa / Umum</option>
                   </select>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase">
-                    Seed
-                  </label>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase">Seed</label>
                   <select
                     className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none font-bold text-xs"
                     value={formData.seed}
-                    onChange={(e) =>
-                      setFormData({ ...formData, seed: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, seed: e.target.value })}
                   >
                     <option value="Seed A">Seed A</option>
                     <option value="Seed B+">Seed B+</option>
@@ -577,44 +614,29 @@ export default function AdminRanking() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase">
-                    Base Points
-                  </label>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase">Base Points</label>
                   <input
                     type="number"
                     className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none text-zinc-400"
                     value={formData.poin}
-                    onChange={(e) =>
-                      setFormData({ ...formData, poin: Number(e.target.value) })
-                    }
+                    onChange={(e) => setFormData({ ...formData, poin: Number(e.target.value) })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-emerald-500 uppercase">
-                    Added Points
-                  </label>
+                  <label className="text-[10px] font-black text-emerald-500 uppercase">Added Points</label>
                   <input
                     type="number"
                     className="w-full bg-zinc-900 border border-emerald-500/20 rounded-2xl p-4 outline-none"
                     value={formData.bonus}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        bonus: Number(e.target.value),
-                      })
-                    }
+                    onChange={(e) => setFormData({ ...formData, bonus: Number(e.target.value) })}
                   />
                 </div>
               </div>
 
               <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-600/20 flex justify-between items-center">
-                <span className="text-[10px] font-black uppercase text-blue-400 italic">
-                  Total Poin Akhir
-                </span>
+                <span className="text-[10px] font-black uppercase text-blue-400 italic">Total Poin Akhir</span>
                 <span className="text-2xl font-black text-white">
-                  {(
-                    (Number(formData.poin) || 0) + (Number(formData.bonus) || 0)
-                  ).toLocaleString()}
+                  {((Number(formData.poin) || 0) + (Number(formData.bonus) || 0)).toLocaleString()}
                 </span>
               </div>
 
