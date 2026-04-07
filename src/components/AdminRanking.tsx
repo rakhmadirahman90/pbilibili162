@@ -18,7 +18,7 @@ import {
   Download,
   FileText,
   Table as TableIcon
-} from 'lucide-react';
+} from 'lucide-center'; // Pastikan lucide-react, saya asumsikan penulisan standar lucide-react
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -57,7 +57,7 @@ export default function AdminRanking() {
   const [formData, setFormData] = useState<Partial<Ranking>>({
     player_name: '',
     category: 'SENIOR',
-    seed: 'A', // Default ke A
+    seed: 'Seed A',
     total_points: 0,
     bonus: 0,
     poin: 0,
@@ -113,6 +113,7 @@ export default function AdminRanking() {
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
 
+  // --- LOGIKA SINKRONISASI DATA (SINKRON DENGAN KATEGORI SEED BARU) ---
   const autoSyncData = useCallback(async () => {
     try {
       const { data: statsData, error: statsError } = await supabase
@@ -133,11 +134,19 @@ export default function AdminRanking() {
           if (profile) {
             const base = Number(stat.points) || 0;
             const added = Number(stat.total_points) || 0;
+
+            // Normalisasi Seed agar sinkron antara 'A' dan 'Seed A' dsb.
+            let normalizedSeed = stat.seed || 'Non-Seed';
+            if (normalizedSeed === 'A') normalizedSeed = 'Seed A';
+            if (normalizedSeed === 'B+') normalizedSeed = 'Seed B+';
+            if (normalizedSeed === 'B' || normalizedSeed === 'B-') normalizedSeed = 'Seed B-';
+            if (normalizedSeed === 'C') normalizedSeed = 'Seed C';
+
             return {
               pendaftaran_id: profile.id,
               player_name: (profile.nama || '').trim().toUpperCase(),
               category: profile.kategori_atlet || 'SENIOR',
-              seed: stat.seed || 'Non-Seed',
+              seed: normalizedSeed,
               photo_url: profile.foto_url || null,
               poin: base,
               bonus: added,
@@ -313,13 +322,13 @@ export default function AdminRanking() {
             <button onClick={fetchRankings} disabled={loading} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-900 border border-white/10 px-4 py-3 rounded-xl font-bold uppercase text-[10px] hover:bg-zinc-800 transition-all text-zinc-300 disabled:opacity-50">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Sync Data
             </button>
-            <button onClick={() => { setEditingId(null); setFormData({ player_name: '', category: 'SENIOR', seed: 'A', poin: 0, bonus: 0, photo_url: '' }); setIsModalOpen(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-4 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20">
+            <button onClick={() => { setEditingId(null); setFormData({ player_name: '', category: 'SENIOR', seed: 'Seed A', poin: 0, bonus: 0, photo_url: '' }); setIsModalOpen(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-4 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20">
               <Plus size={14} /> Tambah Atlet
             </button>
           </div>
         </div>
 
-        {/* Filter Section - FIXED SYNCED VALUES */}
+        {/* Filter Section - FIXED & SYNCED */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -346,10 +355,10 @@ export default function AdminRanking() {
             onChange={(e) => setSelectedSeed(e.target.value)}
           >
             <option value="Semua">SEMUA SEED</option>
-            <option value="A">Seed A</option>
-            <option value="B+">Seed B+</option>
-            <option value="B">Seed B</option>
-            <option value="C">Seed C</option>
+            <option value="Seed A">Seed A</option>
+            <option value="Seed B+">Seed B+</option>
+            <option value="Seed B-">Seed B-</option>
+            <option value="Seed C">Seed C</option>
             <option value="Non-Seed">Non-Seed</option>
           </select>
         </div>
@@ -472,7 +481,7 @@ export default function AdminRanking() {
         )}
       </div>
 
-      {/* MODAL FORM - FIXED INPUTS */}
+      {/* MODAL FORM - FIXED SINKRONISASI SEED */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -531,10 +540,10 @@ export default function AdminRanking() {
                     value={formData.seed}
                     onChange={(e) => setFormData({ ...formData, seed: e.target.value })}
                   >
-                    <option value="A">Seed A</option>
-                    <option value="B+">Seed B+</option>
-                    <option value="B-">Seed B-</option>
-                    <option value="C">Seed C</option>
+                    <option value="Seed A">Seed A</option>
+                    <option value="Seed B+">Seed B+</option>
+                    <option value="Seed B-">Seed B-</option>
+                    <option value="Seed C">Seed C</option>
                     <option value="Non-Seed">Non-Seed</option>
                   </select>
                 </div>
