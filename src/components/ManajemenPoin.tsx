@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase';
 import {
   Trophy,
@@ -40,31 +40,51 @@ export default function ManajemenPoin() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  useEffect(() => {
-    fetchAtlets();
+  // --- KODE BARU: FUNGSI SINKRONISASI ATLET BARU ---
+  const syncNewAthletes = useCallback(async () => {
+    try {
+      // 1. Ambil semua ID dari pendaftaran
+      const { data: pendaftaran } = await supabase.from('pendaftaran').select('id, nama');
+      // 2. Ambil semua pendaftaran_id yang sudah ada di atlet_stats
+      const { data: stats } = await supabase.from('atlet_stats').select('pendaftaran_id');
 
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', table: 'atlet_stats', schema: 'public' },
-        () => fetchAtlets()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', table: 'rankings', schema: 'public' },
-        () => fetchAtlets()
-      )
-      .subscribe();
+      if (!pendaftaran) return;
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      const existingIds = new Set(stats?.map(s => s.pendaftaran_id) || []);
+      const newAthletes = pendaftaran.filter(p => !existingIds.has(p.id));
+
+      if (newAthletes.length > 0) {
+        const insertData = newAthletes.map(a => ({
+          pendaftaran_id: a.id,
+          player_name: a.nama,
+          seed: 'UNSEEDED',
+          points: 0,
+          total_points: 0,
+          last_match_at: new Date().toISOString()
+        }));
+
+        await supabase.from('atlet_stats').insert(insertData);
+        
+        // Inisialisasi juga di tabel rankings untuk publik
+        const rankingData = newAthletes.map(a => ({
+          player_name: a.nama,
+          total_points: 0,
+          updated_at: new Date().toISOString()
+        }));
+        
+        await supabase.from('rankings').upsert(rankingData, { onConflict: 'player_name' });
+      }
+    } catch (err) {
+      console.error('Gagal sinkronisasi atlet baru:', err);
+    }
   }, []);
 
   const fetchAtlets = async () => {
     setLoading(true);
     try {
+      // Jalankan sinkronisasi atlet baru terlebih dahulu
+      await syncNewAthletes();
+
       const { data: profiles, error: pError } = await supabase
         .from('pendaftaran')
         .select('id, nama')
@@ -84,19 +104,16 @@ export default function ManajemenPoin() {
         const stat = statsMap.get(p.id);
         const currentSeed = stat?.seed || 'UNSEEDED';
 
-        // PERBAIKAN: Base Poin diambil langsung dari kolom 'points' di database
         const basePoints = Number(stat?.points || 0);
-        // Added Poin (Manual) diambil dari kolom 'total_points'
         const addedPoints = Number(stat?.total_points || 0);
 
         return {
           ...p,
           seed: currentSeed,
           age_group: SEED_CONFIG[currentSeed]?.age || 'SENIOR',
-          // RANKING TOTAL = Base Poin + Added Poin
           display_points: basePoints + addedPoints,
-          raw_points: basePoints, // Ini adalah Base Poin (kolom points)
-          raw_total_points: addedPoints, // Ini adalah Added Poin (kolom total_points)
+          raw_points: basePoints, 
+          raw_total_points: addedPoints, 
         };
       });
 
@@ -108,10 +125,37 @@ export default function ManajemenPoin() {
     }
   };
 
+  useEffect(() => {
+    fetchAtlets();
+
+    // Perbaikan Real-time: Mendengarkan tabel pendaftaran juga untuk atlet baru
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', table: 'atlet_stats', schema: 'public' },
+        () => fetchAtlets()
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', table: 'rankings', schema: 'public' },
+        () => fetchAtlets()
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', table: 'pendaftaran', schema: 'public' },
+        () => fetchAtlets()
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const handleUpdateSeed = async (atlet: any, newSeed: string) => {
     setUpdatingId(atlet.id);
     const newBasePoints = SEED_CONFIG[newSeed].base;
-    // Konsistensi: New Total Ranking = New Base + Existing Added Poin
     const newTotalRanking = newBasePoints + atlet.raw_total_points;
 
     try {
@@ -174,9 +218,7 @@ export default function ManajemenPoin() {
     if (updatingId) return;
     setUpdatingId(atlet.id);
 
-    // amount ditambahkan ke Added Poin (raw_total_points)
     const newAddedPoints = Math.max(0, atlet.raw_total_points + amount);
-    // display_points otomatis terupdate: Base + New Added
     const newDisplayPoints = atlet.raw_points + newAddedPoints;
 
     try {
@@ -184,7 +226,6 @@ export default function ManajemenPoin() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      // Update kolom total_points (sebagai Added Poin)
       const { error: statsError } = await supabase.from('atlet_stats').upsert(
         {
           pendaftaran_id: atlet.id,
@@ -198,7 +239,6 @@ export default function ManajemenPoin() {
 
       if (statsError) throw statsError;
 
-      // Update tabel rankings untuk sinkronisasi profil publik
       const { error: rankingsError } = await supabase.from('rankings').upsert(
         {
           player_name: atlet.nama,
@@ -210,7 +250,6 @@ export default function ManajemenPoin() {
 
       if (rankingsError) throw rankingsError;
 
-      // Catat log audit
       await supabase.from('audit_poin').insert([
         {
           admin_email: user?.email || 'Admin',
@@ -224,7 +263,7 @@ export default function ManajemenPoin() {
       ]);
 
       setShowSuccess(true);
-      fetchAtlets(); // Refresh data untuk memastikan state sinkron dengan DB
+      fetchAtlets(); 
       if (expandedId === atlet.id) fetchHistory(atlet.nama);
       setTimeout(() => setShowSuccess(false), 2000);
     } catch (err: any) {
@@ -246,8 +285,10 @@ export default function ManajemenPoin() {
 
   return (
     <div className="p-8 bg-[#050505] min-h-screen text-white font-sans relative overflow-hidden">
+      {/* Visual Background */}
       <div className="absolute top-0 left-0 w-96 h-96 bg-blue-600/5 blur-[120px] rounded-full -z-10" />
 
+      {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-start gap-6 mb-12">
         <div>
           <div className="flex items-center gap-2 mb-2">
@@ -287,6 +328,7 @@ export default function ManajemenPoin() {
         </div>
       </div>
 
+      {/* Main List */}
       <div className="grid gap-4 mb-8">
         {loading && atlets.length === 0 ? (
           <div className="py-24 flex flex-col items-center gap-4">
@@ -298,6 +340,7 @@ export default function ManajemenPoin() {
         ) : (
           currentItems.map((atlet) => (
             <div key={atlet.id} className="flex flex-col">
+              {/* Card Container */}
               <div
                 className={`bg-zinc-900/40 border ${
                   expandedId === atlet.id
@@ -392,6 +435,7 @@ export default function ManajemenPoin() {
                 </div>
               </div>
 
+              {/* Detail Expansion */}
               {expandedId === atlet.id && (
                 <div className="bg-zinc-950 border-x border-b border-blue-600/30 rounded-b-[2.5rem] p-6 animate-in slide-in-from-top-4 duration-300">
                   <div className="grid md:grid-cols-3 gap-4 mb-4 border-b border-zinc-800 pb-4">
@@ -458,6 +502,7 @@ export default function ManajemenPoin() {
         )}
       </div>
 
+      {/* Pagination */}
       {!loading && totalPages > 1 && (
         <div className="flex items-center justify-center gap-4 mt-8 pb-10">
           <button
@@ -477,6 +522,7 @@ export default function ManajemenPoin() {
         </div>
       )}
 
+      {/* Success Toast */}
       <div
         className={`fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] transition-all duration-700 transform ${
           showSuccess
