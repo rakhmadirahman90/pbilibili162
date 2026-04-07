@@ -56,7 +56,7 @@ export default function AdminRanking() {
 
   const [formData, setFormData] = useState<Partial<Ranking>>({
     player_name: '',
-    category: 'Senior',
+    category: 'Ganda Putra',
     seed: 'Seed A',
     total_points: 0,
     bonus: 0,
@@ -113,33 +113,40 @@ export default function AdminRanking() {
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
 
-  // --- LOGIKA SINKRONISASI DATA ---
+  // --- LOGIKA SINKRONISASI DATA (PERBAIKAN KATEGORI & SEED) ---
   const autoSyncData = useCallback(async () => {
     try {
+      // 1. Ambil data statistik poin & seed
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
 
       if (statsError) throw statsError;
 
+      // 2. Ambil data pendaftaran untuk mendapatkan kategori pertandingan (Ganda Putra/dll)
       const { data: pendaftaranData, error: pendaftaranError } = await supabase
         .from('pendaftaran')
-        .select('id, nama, foto_url, kategori');
+        .select('id, nama, foto_url, kategori'); // Memastikan kategori pertandingan yang diambil
 
       if (pendaftaranError) throw pendaftaranError;
 
-      // Map data untuk memastikan integritas nama dan poin
       const finalDataArray = (statsData || [])
         .map((stat) => {
           const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
           if (profile) {
             const base = Number(stat.points) || 0;
             const added = Number(stat.total_points) || 0;
+            
+            // Pemetaan Seed agar konsisten dengan pilihan modal
+            let mappedSeed = stat.seed || 'Non-Seed';
+            const validSeeds = ['Seed A', 'Seed B+', 'Seed B', 'Seed C', 'Non-Seed'];
+            if (!validSeeds.includes(mappedSeed)) mappedSeed = 'Non-Seed';
+
             return {
               pendaftaran_id: profile.id,
               player_name: (profile.nama || '').trim().toUpperCase(),
-              category: profile.kategori || 'Senior',
-              seed: stat.seed || 'Non-Seed',
+              category: profile.kategori || 'Ganda Putra', // Mengambil kategori atlet/pertandingan
+              seed: mappedSeed,
               photo_url: profile.foto_url || null,
               poin: base,
               bonus: added,
@@ -152,7 +159,6 @@ export default function AdminRanking() {
         .filter(Boolean);
 
       if (finalDataArray.length > 0) {
-        // Gunakan upsert dengan onConflict player_name untuk mencegah duplikasi
         await supabase.from('rankings').upsert(finalDataArray, { onConflict: 'player_name' });
         return true;
       }
@@ -166,7 +172,6 @@ export default function AdminRanking() {
   const fetchRankings = useCallback(async () => {
     setLoading(true);
     try {
-      // Jalankan sinkronisasi sebelum mengambil data terbaru
       await autoSyncData();
       const { data, error } = await supabase
         .from('rankings')
@@ -281,7 +286,6 @@ export default function AdminRanking() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedRankings = filteredRankings.slice(startIndex, startIndex + itemsPerPage);
 
-  // Reset page ke 1 jika filter berubah
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, selectedSeed, selectedCategory]);
@@ -289,7 +293,7 @@ export default function AdminRanking() {
   return (
     <div className="min-h-screen bg-[#050505] text-white p-4 md:p-12 font-sans selection:bg-blue-500/30">
       <div className="max-w-7xl mx-auto">
-        {/* Notifikasi Floating */}
+        {/* Floating Notification */}
         {successMsg && (
           <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[150] bg-blue-600 text-white px-6 py-3 rounded-full font-bold text-xs uppercase flex items-center gap-3 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
             <Zap size={16} className="fill-white" /> {successMsg}
@@ -320,13 +324,13 @@ export default function AdminRanking() {
             <button onClick={fetchRankings} disabled={loading} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-900 border border-white/10 px-4 py-3 rounded-xl font-bold uppercase text-[10px] hover:bg-zinc-800 transition-all text-zinc-300 disabled:opacity-50">
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Sync Data
             </button>
-            <button onClick={() => { setEditingId(null); setFormData({ player_name: '', category: 'Senior', seed: 'Seed A', poin: 0, bonus: 0, photo_url: '' }); setIsModalOpen(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-4 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20">
+            <button onClick={() => { setEditingId(null); setFormData({ player_name: '', category: 'Ganda Putra', seed: 'Seed A', poin: 0, bonus: 0, photo_url: '' }); setIsModalOpen(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-4 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20">
               <Plus size={14} /> Tambah Atlet
             </button>
           </div>
         </div>
 
-        {/* Filter Section */}
+        {/* Filter Section - Perbaikan Kategori & Seed */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -344,9 +348,10 @@ export default function AdminRanking() {
             onChange={(e) => setSelectedCategory(e.target.value)}
           >
             <option value="Semua">SEMUA KATEGORI</option>
-            <option value="Senior">SENIOR</option>
-            <option value="Junior">JUNIOR</option>
-            <option value="Veteran">VETERAN</option>
+            <option value="Ganda Putra">GANDA PUTRA</option>
+            <option value="Tunggal Putra">TUNGGAL PUTRA</option>
+            <option value="Ganda Campuran">GANDA CAMPURAN</option>
+            <option value="Member Internal">MEMBER INTERNAL</option>
           </select>
           <select
             className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer uppercase text-zinc-300"
@@ -454,7 +459,7 @@ export default function AdminRanking() {
           </table>
         </div>
 
-        {/* Pagination Section */}
+        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex justify-between items-center mt-8 px-2">
             <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
@@ -524,15 +529,16 @@ export default function AdminRanking() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase">Kategori</label>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase">Kategori Pertandingan</label>
                   <select
                     className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none font-bold text-xs uppercase"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   >
-                    <option value="Senior">Senior</option>
-                    <option value="Junior">Junior</option>
-                    <option value="Veteran">Veteran</option>
+                    <option value="Ganda Putra">Ganda Putra</option>
+                    <option value="Tunggal Putra">Tunggal Putra</option>
+                    <option value="Ganda Campuran">Ganda Campuran</option>
+                    <option value="Member Internal">Member Internal</option>
                   </select>
                 </div>
                 <div className="space-y-2">
