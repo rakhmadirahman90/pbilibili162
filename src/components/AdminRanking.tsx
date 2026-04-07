@@ -56,7 +56,7 @@ export default function AdminRanking() {
 
   const [formData, setFormData] = useState<Partial<Ranking>>({
     player_name: '',
-    category: 'Senior',
+    category: 'SENIOR', // Default kapital sesuai database
     seed: 'Seed A',
     total_points: 0,
     bonus: 0,
@@ -64,11 +64,7 @@ export default function AdminRanking() {
     photo_url: '',
   });
 
-  // Reset halaman saat filter berubah
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [searchTerm, selectedSeed, selectedCategory]);
-
+  // --- FUNGSI EXPORT ---
   const exportToExcel = () => {
     const fileType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8";
     const fileExtension = ".xlsx";
@@ -137,7 +133,8 @@ export default function AdminRanking() {
             return {
               pendaftaran_id: profile.id,
               player_name: profile.nama.trim().toUpperCase(),
-              category: profile.kategori || 'Senior',
+              // Mengambil kategori asli dari pendaftaran dan memastikan UPPERCASE
+              category: (profile.kategori || 'SENIOR').toUpperCase(),
               seed: stat.seed || 'Non-Seed',
               photo_url: profile.foto_url || null,
               poin: base,
@@ -221,7 +218,7 @@ export default function AdminRanking() {
       const added = Number(formData.bonus) || 0;
       const payload = {
         player_name: cleanName,
-        category: formData.category,
+        category: formData.category?.toUpperCase(), // Simpan dalam UPPERCASE
         seed: formData.seed,
         poin: base,
         bonus: added,
@@ -261,23 +258,19 @@ export default function AdminRanking() {
     }
   };
 
-  // --- LOGIKA FILTER FIX: Menggunakan includes() dan toUpperCase() ---
+  // --- LOGIKA FILTER DIPERBAIKI (MENGGUNAKAN UPPERCASE MATCHING) ---
   const filteredRankings = rankings.filter((r) => {
-    const searchLower = searchTerm.toLowerCase().trim();
-    const playerLower = (r.player_name || '').toLowerCase();
-    const categoryUpper = (r.category || '').toUpperCase();
-    const seedUpper = (r.seed || '').toUpperCase();
-
-    const matchSearch = playerLower.includes(searchLower);
+    const matchSearch = (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Gunakan .includes() agar "SENIOR" cocok dengan "SENIOR - A"
-    const matchCategory = selectedCategory === 'Semua' || 
-                          categoryUpper.includes(selectedCategory.toUpperCase());
-
-    // Gunakan .includes() agar "SEED A" cocok dengan kategori yang mengandung huruf "A" atau string "SEED A"
-    const matchSeed = selectedSeed === 'Semua' || 
-                      seedUpper.includes(selectedSeed.toUpperCase());
-
+    // Filter Seed: Exact match
+    const matchSeed = selectedSeed === 'Semua' || r.seed === selectedSeed;
+    
+    // Filter Kategori: Menggunakan includes() dan toUpperCase() agar fleksibel jika data "MUDA - A" atau "SENIOR - B"
+    const dbCategory = (r.category || '').toUpperCase();
+    const filterCategory = selectedCategory.toUpperCase();
+    
+    const matchCategory = selectedCategory === 'Semua' || dbCategory.includes(filterCategory);
+    
     return matchSearch && matchSeed && matchCategory;
   });
 
@@ -331,7 +324,7 @@ export default function AdminRanking() {
               onClick={() => {
                 setEditingId(null);
                 setFormData({
-                  player_name: '', category: 'Senior', seed: 'Seed A',
+                  player_name: '', category: 'SENIOR', seed: 'Seed A',
                   total_points: 0, bonus: 0, poin: 0, photo_url: '',
                 });
                 setIsModalOpen(true);
@@ -343,7 +336,7 @@ export default function AdminRanking() {
           </div>
         </div>
 
-        {/* Filter Section */}
+        {/* Filter Section - Diperbarui Kategori */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -356,18 +349,16 @@ export default function AdminRanking() {
             />
           </div>
           <select
-            className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer uppercase"
+            className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer"
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
           >
             <option value="Semua">SEMUA KATEGORI</option>
-            <option value="Senior">SENIOR</option>
-            <option value="Junior">JUNIOR</option>
-            <option value="Veteran">VETERAN</option>
-            <option value="Umum">UMUM</option>
+            <option value="MUDA">MUDA</option>
+            <option value="SENIOR">SENIOR</option>
           </select>
           <select
-            className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer uppercase"
+            className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer"
             value={selectedSeed}
             onChange={(e) => setSelectedSeed(e.target.value)}
           >
@@ -466,7 +457,7 @@ export default function AdminRanking() {
               ) : (
                 <tr>
                   <td colSpan={8} className="p-20 text-center text-zinc-500 uppercase font-bold text-xs">
-                    Data Kosong / Tidak Ditemukan
+                    Tidak ada data ditemukan (Kategori: {selectedCategory})
                   </td>
                 </tr>
               )}
@@ -500,7 +491,7 @@ export default function AdminRanking() {
         )}
       </div>
 
-      {/* Modal Form */}
+      {/* Modal Form - Diperbarui Kategori */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -546,10 +537,8 @@ export default function AdminRanking() {
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   >
-                    <option value="Senior">Senior</option>
-                    <option value="Junior">Junior</option>
-                    <option value="Veteran">Veteran</option>
-                    <option value="Umum">Umum</option>
+                    <option value="MUDA">MUDA</option>
+                    <option value="SENIOR">SENIOR</option>
                   </select>
                 </div>
                 <div className="space-y-2">
