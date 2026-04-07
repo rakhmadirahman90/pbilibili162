@@ -15,14 +15,20 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
-  FileText,
-  Table as TableIcon,
+  FileSpreadsheet, // Icon untuk Excel
+  FileText,        // Icon untuk PDF
 } from 'lucide-react';
-// Import untuk fitur Export
-import { saveAs } from 'file-saver';
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { saveAs } from "file-saver";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
+
+// Interface untuk jsPDF autotable
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: any) => jsPDF;
+  }
+}
 
 interface Ranking {
   id: string;
@@ -30,9 +36,9 @@ interface Ranking {
   player_name: string;
   category: string;
   seed: string;
-  total_points: number;
-  bonus: number;
-  poin: number;
+  total_points: number; 
+  bonus: number; 
+  poin: number; 
   photo_url?: string;
   updated_at?: string;
 }
@@ -63,32 +69,31 @@ export default function AdminRanking() {
     photo_url: '',
   });
 
-  // --- FITUR EXPORT ---
+  // --- FUNGSI EXPORT EXCEL ---
   const exportToExcel = () => {
-    const fileType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8';
-    const fileExtension = '.xlsx';
-    const fileName = `RANKING_PB_BILIBILI_${new Date().toLocaleDateString()}`;
-
-    const exportData = filteredRankings.map((item, index) => ({
+    const fileType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8";
+    const fileExtension = ".xlsx";
+    
+    const dataToExport = filteredRankings.map((item, index) => ({
       Rank: index + 1,
       Nama: item.player_name,
       Kategori: item.category,
       Seed: item.seed,
-      'Base Points': item.poin,
-      'Added Points': item.bonus,
-      'Total Points': item.total_points,
+      "Base Points": item.poin,
+      "Added Points": item.bonus,
+      "Total Points": item.total_points
     }));
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = { Sheets: { data: ws }, SheetNames: ['data'] };
-    const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = { Sheets: { data: ws }, SheetNames: ["data"] };
+    const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const data = new Blob([excelBuffer], { type: fileType });
-    saveAs(data, fileName + fileExtension);
-    setSuccessMsg('Excel berhasil diunduh!');
+    saveAs(data, "Ranking_PB_Bilibili_162" + fileExtension);
   };
 
+  // --- FUNGSI EXPORT PDF ---
   const exportToPDF = () => {
-    const doc = jsPDF();
+    const doc = new jsPDF();
     const tableColumn = ["Rank", "Nama Atlet", "Kategori", "Seed", "Base", "Added", "Total"];
     const tableRows: any[] = [];
 
@@ -98,32 +103,30 @@ export default function AdminRanking() {
         item.player_name,
         item.category,
         item.seed,
-        item.poin.toLocaleString(),
-        item.bonus.toLocaleString(),
-        item.total_points.toLocaleString(),
+        item.poin,
+        item.bonus,
+        item.total_points
       ];
       tableRows.push(rowData);
     });
 
     doc.setFontSize(18);
-    doc.text("LAPORAN RANKING ATLET PB BILIBILI 162", 14, 22);
+    doc.text("DATA RANKING PB BILIBILI 162", 14, 22);
     doc.setFontSize(11);
     doc.setTextColor(100);
     doc.text(`Dicetak pada: ${new Date().toLocaleString()}`, 14, 30);
 
-    autoTable(doc, {
+    doc.autoTable({
       head: [tableColumn],
       body: tableRows,
       startY: 35,
       theme: 'grid',
-      headStyles: { fillColor: [37, 99, 235] }
+      headStyles: { fillColor: [37, 99, 235] } // Blue-600
     });
 
-    doc.save(`RANKING_PB_BILIBILI_${Date.now()}.pdf`);
-    setSuccessMsg('PDF berhasil diunduh!');
+    doc.save("Ranking_PB_Bilibili_162.pdf");
   };
 
-  // --- FUNGSI SINKRONISASI ---
   const autoSyncData = useCallback(async () => {
     try {
       const { data: statsData, error: statsError } = await supabase
@@ -336,24 +339,22 @@ export default function AdminRanking() {
           </div>
 
           <div className="flex flex-wrap gap-3 w-full md:w-auto">
-            {/* Tombol Export */}
-            <button 
+            <button
               onClick={exportToExcel}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600/10 border border-emerald-500/20 px-4 py-3 rounded-xl font-bold uppercase text-[9px] hover:bg-emerald-600 transition-all text-emerald-500 hover:text-white"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600/10 border border-emerald-500/20 px-4 py-4 rounded-xl font-bold uppercase text-[10px] hover:bg-emerald-600 transition-all text-emerald-500 hover:text-white"
             >
-              <TableIcon size={14} /> Excel
+              <FileSpreadsheet size={14} /> Excel
             </button>
-            <button 
+            <button
               onClick={exportToPDF}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-red-600/10 border border-red-500/20 px-4 py-3 rounded-xl font-bold uppercase text-[9px] hover:bg-red-600 transition-all text-red-500 hover:text-white"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-red-600/10 border border-red-500/20 px-4 py-4 rounded-xl font-bold uppercase text-[10px] hover:bg-red-600 transition-all text-red-500 hover:text-white"
             >
               <FileText size={14} /> PDF
             </button>
-
             <button
               onClick={fetchRankings}
               disabled={loading}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-900 border border-white/10 px-4 py-3 rounded-xl font-bold uppercase text-[9px] hover:bg-zinc-800 transition-all text-zinc-300"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-zinc-900 border border-white/10 px-6 py-4 rounded-xl font-bold uppercase text-[10px] hover:bg-zinc-800 transition-all text-zinc-300"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
               Sync
@@ -372,9 +373,9 @@ export default function AdminRanking() {
                 });
                 setIsModalOpen(true);
               }}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20"
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-4 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20"
             >
-              <Plus size={14} /> Tambah Atlet
+              <Plus size={14} /> Tambah
             </button>
           </div>
         </div>
@@ -382,10 +383,7 @@ export default function AdminRanking() {
         {/* Filter Section */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
-            <Search
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500"
-              size={18}
-            />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
             <input
               type="text"
               placeholder="CARI NAMA ATLET..."
@@ -410,22 +408,23 @@ export default function AdminRanking() {
 
         {/* Table Section */}
         <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
-          <table className="w-full text-left min-w-[950px]">
+          <table className="w-full text-left min-w-[1000px]">
             <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
               <tr>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center w-20">Rank</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Profil Atlet</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Kategori / Seed</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Base Points</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Added Points</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center">Total Ranking</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Nama Atlet</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Kategori</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Seeded</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Base</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Added</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center">Total</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest text-right">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse">
+                  <td colSpan={8} className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse">
                     Memproses Data Ranking...
                   </td>
                 </tr>
@@ -446,32 +445,31 @@ export default function AdminRanking() {
                             </div>
                           )}
                         </div>
-                        <div>
-                          <p className="font-black uppercase italic text-sm text-white group-hover:text-blue-400 leading-none">
-                            {item.player_name}
-                          </p>
-                        </div>
+                        <p className="font-black uppercase italic text-sm text-white group-hover:text-blue-400 leading-none">
+                          {item.player_name}
+                        </p>
                       </div>
                     </td>
+                    {/* PEMISAHAN KOLOM KATEGORI DAN SEEDED */}
                     <td className="p-5">
-                      <div className="flex flex-col gap-1">
-                        <span className="px-2 py-1 bg-blue-600/10 text-blue-400 border border-blue-600/20 rounded text-[9px] font-black uppercase w-fit">
-                          {item.category}
-                        </span>
-                        <span className={`px-2 py-1 border rounded text-[9px] font-black uppercase w-fit ${
-                          item.seed.includes('A') ? 'bg-yellow-600/10 text-yellow-500 border-yellow-500/20' : 
-                          item.seed.includes('B') ? 'bg-emerald-600/10 text-emerald-500 border-emerald-500/20' :
-                          'bg-zinc-600/10 text-zinc-500 border-zinc-500/20'
-                        }`}>
-                          {item.seed}
-                        </span>
-                      </div>
+                      <span className="px-3 py-1.5 bg-zinc-900 border border-white/5 rounded-lg text-[9px] font-black uppercase tracking-tighter text-zinc-400 group-hover:border-blue-500/30">
+                        {item.category}
+                      </span>
                     </td>
                     <td className="p-5">
-                      <span className="text-zinc-400 font-bold text-xs">{(Number(item.poin) || 0).toLocaleString()}</span>
+                      <span className="px-3 py-1.5 bg-blue-600/10 border border-blue-500/20 rounded-lg text-[9px] font-black uppercase tracking-tighter text-blue-500">
+                        {item.seed}
+                      </span>
                     </td>
                     <td className="p-5">
-                      <span className="text-emerald-500 font-bold text-xs">+{(Number(item.bonus) || 0).toLocaleString()}</span>
+                      <span className="text-zinc-400 font-bold text-xs">
+                        {(Number(item.poin) || 0).toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="p-5">
+                      <span className="text-emerald-500 font-bold text-xs">
+                        +{(Number(item.bonus) || 0).toLocaleString()}
+                      </span>
                     </td>
                     <td className="p-5 text-center">
                       <span className="text-xl font-black text-white group-hover:text-blue-500 transition-colors">
@@ -500,7 +498,7 @@ export default function AdminRanking() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="p-20 text-center text-zinc-500 uppercase font-bold text-xs">
+                  <td colSpan={8} className="p-20 text-center text-zinc-500 uppercase font-bold text-xs">
                     Tidak ada data ditemukan
                   </td>
                 </tr>
@@ -543,10 +541,7 @@ export default function AdminRanking() {
               <h3 className="font-black uppercase italic text-2xl">
                 {editingId ? 'EDIT' : 'TAMBAH'} ATLET
               </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="p-3 bg-zinc-900 rounded-2xl"
-              >
+              <button onClick={() => setIsModalOpen(false)} className="p-3 bg-zinc-900 rounded-2xl">
                 <X size={24} />
               </button>
             </div>
@@ -581,7 +576,6 @@ export default function AdminRanking() {
                     onChange={(e) => setFormData({ ...formData, player_name: e.target.value })}
                   />
                 </div>
-
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase">Kategori</label>
                   <select
@@ -592,10 +586,8 @@ export default function AdminRanking() {
                     <option value="Senior">Senior</option>
                     <option value="Junior">Junior</option>
                     <option value="Veteran">Veteran</option>
-                    <option value="Dewasa / Umum">Dewasa / Umum</option>
                   </select>
                 </div>
-
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase">Seed</label>
                   <select
