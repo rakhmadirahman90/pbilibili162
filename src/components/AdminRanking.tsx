@@ -18,7 +18,7 @@ import {
   Download,
   FileText,
   Table as TableIcon
-} from 'lucide-react'; // Pastikan lucide-react terpasang
+} from 'lucide-react'; // Pastikan library ini benar (lucide-react)
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -57,12 +57,20 @@ export default function AdminRanking() {
   const [formData, setFormData] = useState<Partial<Ranking>>({
     player_name: '',
     category: 'SENIOR',
-    seed: 'Seed A',
+    seed: 'Non-Seed',
     total_points: 0,
     bonus: 0,
     poin: 0,
     photo_url: '',
   });
+
+  // --- AUTO DISMISS NOTIFICATION ---
+  useEffect(() => {
+    if (successMsg) {
+      const timer = setTimeout(() => setSuccessMsg(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg]);
 
   // --- FUNGSI EXPORT ---
   const exportToExcel = () => {
@@ -78,7 +86,7 @@ export default function AdminRanking() {
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = { Sheets: { data: ws }, SheetNames: ["data"] };
+    const wb = { Sheets: { data: ws }, SheetNames: ["Ranking"] };
     const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const data = new Blob([excelBuffer], { type: fileType });
     saveAs(data, "Ranking_PB_Bilibili_162.xlsx");
@@ -101,7 +109,7 @@ export default function AdminRanking() {
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
 
-  // --- SINKRONISASI DATA ATLET (DIPERBAIKI: TOTAL 68 DATA) ---
+  // --- SINKRONISASI DATA ATLET ---
   const autoSyncData = useCallback(async () => {
     try {
       const { data: statsData, error: statsError } = await supabase
@@ -137,7 +145,6 @@ export default function AdminRanking() {
       });
 
       if (finalDataArray.length > 0) {
-        // Upsert dengan pendaftaran_id atau player_name sebagai key
         await supabase.from('rankings').upsert(finalDataArray, { onConflict: 'player_name' });
         return true;
       }
@@ -170,28 +177,25 @@ export default function AdminRanking() {
     fetchRankings();
   }, [fetchRankings]);
 
-  // --- LOGIKA FILTER SEEDED (DIPERBAIKI AGAR SINKRON DENGAN DATABASE) ---
+  // --- LOGIKA FILTER ---
   const filteredRankings = rankings.filter((r) => {
     const nameStr = (r.player_name || '').toLowerCase();
     const catStr = (r.category || '').toUpperCase();
-    
-    // Normalisasi string Seed dari database untuk perbandingan (menghapus spasi berlebih)
     const seedStr = (r.seed || 'Non-Seed').trim();
-    const filterSeed = selectedSeed.trim();
 
     const matchSearch = nameStr.includes(searchTerm.toLowerCase());
     
     const matchCategory = selectedCategory === 'Semua' 
-      ? (catStr === 'SENIOR' || catStr === 'MUDA')
+      ? true 
       : catStr === selectedCategory.toUpperCase();
 
-    // Perbaikan Filter Seed: Menggunakan Case Sensitive sesuai nilai database (Seed A, Seed B+, dll)
-    const matchSeed = filterSeed === 'Semua' || seedStr === filterSeed;
+    const matchSeed = selectedSeed === 'Semua' 
+      ? true 
+      : seedStr === selectedSeed;
 
     return matchSearch && matchCategory && matchSeed;
   });
 
-  // Reset pagination saat filter berubah
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, selectedCategory, selectedSeed]);
@@ -238,6 +242,7 @@ export default function AdminRanking() {
         bonus: added,
         total_points: base + added,
         photo_url: formData.photo_url || null,
+        updated_at: new Date().toISOString()
       };
 
       const { error } = editingId 
@@ -247,7 +252,7 @@ export default function AdminRanking() {
       if (error) throw error;
       setIsModalOpen(false);
       setEditingId(null);
-      setSuccessMsg('Data berhasil diperbarui!');
+      setSuccessMsg('Data berhasil disimpan!');
       fetchRankings();
     } catch (err: any) {
       setFormError(err.message);
@@ -257,11 +262,11 @@ export default function AdminRanking() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Hapus atlet ini?')) return;
+    if (!window.confirm('Hapus atlet ini secara permanen?')) return;
     try {
       const { error } = await supabase.from('rankings').delete().eq('id', id);
       if (error) throw error;
-      setSuccessMsg('Data dihapus');
+      setSuccessMsg('Data telah dihapus');
       fetchRankings();
     } catch (err: any) {
       alert(err.message);
@@ -302,7 +307,7 @@ export default function AdminRanking() {
           </div>
         </div>
 
-        {/* SEARCH & FILTER SECTION (DIPERBAIKI) */}
+        {/* SEARCH & FILTER SECTION */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -320,8 +325,8 @@ export default function AdminRanking() {
             onChange={(e) => setSelectedCategory(e.target.value)}
           >
             <option value="Semua">SEMUA KATEGORI</option>
-            <option value="SENIOR">KATEGORI SENIOR</option>
-            <option value="MUDA">KATEGORI MUDA</option>
+            <option value="SENIOR">SENIOR</option>
+            <option value="MUDA">MUDA</option>
           </select>
           <select
             className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer uppercase"
@@ -337,7 +342,7 @@ export default function AdminRanking() {
           </select>
         </div>
 
-        {/* Table Content */}
+        {/* TABLE CONTENT */}
         <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
           <table className="w-full text-left min-w-[1000px]">
             <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
@@ -391,7 +396,7 @@ export default function AdminRanking() {
           </table>
         </div>
 
-        {/* Pagination Controls */}
+        {/* PAGINATION */}
         {totalPages > 1 && (
           <div className="flex justify-between items-center mt-8">
             <p className="text-[10px] font-bold text-zinc-500 uppercase">Halaman {currentPage} / {totalPages}</p>
@@ -403,7 +408,7 @@ export default function AdminRanking() {
         )}
       </div>
 
-      {/* MODAL FORM (LENGKAP) */}
+      {/* MODAL FORM */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -418,7 +423,9 @@ export default function AdminRanking() {
                 </div>
                 <div className="flex-grow">
                   <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
-                  <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-zinc-800 px-4 py-2 rounded-xl text-[10px] font-bold uppercase hover:bg-zinc-700 transition-colors">{isUploading ? 'Uploading...' : 'Ganti Foto'}</button>
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-zinc-800 px-4 py-2 rounded-xl text-[10px] font-bold uppercase hover:bg-zinc-700 transition-colors">
+                    {isUploading ? 'Uploading...' : 'Ganti Foto'}
+                  </button>
                 </div>
               </div>
 
@@ -461,7 +468,7 @@ export default function AdminRanking() {
 
               {formError && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 text-[10px] font-bold uppercase"><AlertCircle size={16} /> {formError}</div>}
 
-              <button disabled={isSaving || isUploading} className="w-full py-5 bg-blue-600 hover:bg-blue-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all shadow-xl shadow-blue-600/20">
+              <button type="submit" disabled={isSaving || isUploading} className="w-full py-5 bg-blue-600 hover:bg-blue-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all shadow-xl shadow-blue-600/20 disabled:opacity-50">
                 {isSaving ? <Loader2 className="animate-spin" /> : <Save />} {editingId ? 'PERBARUI ATLET' : 'SIMPAN ATLET'}
               </button>
             </form>
