@@ -104,24 +104,23 @@ export default function AdminRanking() {
   // --- SINKRONISASI DATA ATLET (DIPERBAIKI: TOTAL 68 DATA) ---
   const autoSyncData = useCallback(async () => {
     try {
-      // 1. Ambil data pendaftaran sebagai MASTER (untuk memastikan jumlah data akurat 68)
+      // 1. Ambil data pendaftaran (Master Data)
       const { data: pendaftaranData, error: pendaftaranError } = await supabase
         .from('pendaftaran')
         .select('id, nama, foto_url, kategori');
       if (pendaftaranError) throw pendaftaranError;
 
-      // 2. Ambil data statistik untuk poin dan seed
+      // 2. Ambil data statistik untuk poin dan seeded
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
       if (statsError) throw statsError;
 
-      // 3. Gabungkan data
+      // 3. Mapping data pendaftaran sebagai basis utama
       const finalDataArray = (pendaftaranData || []).map((profile) => {
         const stat = (statsData || []).find((s) => s.pendaftaran_id === profile.id);
         
-        // Normalisasi Kategori Atlet (Hanya SENIOR atau MUDA)
-        // Jika di database pendaftaran ada kata 'MUDA' (misal: MUDA/PEMULA), jadikan MUDA. Selain itu SENIOR.
+        // Normalisasi Kategori (SENIOR / MUDA)
         const rawCat = (profile.kategori || 'SENIOR').toUpperCase();
         const cleanCategory = rawCat.includes('MUDA') ? 'MUDA' : 'SENIOR';
 
@@ -130,7 +129,7 @@ export default function AdminRanking() {
 
         return {
           pendaftaran_id: profile.id,
-          player_name: (profile.nama || 'TANPA NAMA').trim().toUpperCase(),
+          player_name: (profile.nama || '').trim().toUpperCase(),
           category: cleanCategory,
           seed: stat?.seed || 'Non-Seed',
           photo_url: profile.foto_url || null,
@@ -142,7 +141,7 @@ export default function AdminRanking() {
       });
 
       if (finalDataArray.length > 0) {
-        // Gunakan upsert berdasarkan pendaftaran_id atau player_name
+        // Upsert menggunakan player_name sebagai kunci konflik untuk sinkronisasi massal
         const { error: upsertError } = await supabase
           .from('rankings')
           .upsert(finalDataArray, { onConflict: 'player_name' });
@@ -152,7 +151,7 @@ export default function AdminRanking() {
       }
       return false;
     } catch (err: any) {
-      console.error('Sync Error Detail:', err.message);
+      console.error('Sync Error:', err.message);
       return false;
     }
   }, []);
@@ -160,7 +159,7 @@ export default function AdminRanking() {
   const fetchRankings = useCallback(async () => {
     setLoading(true);
     try {
-      // Jalankan sinkronisasi dulu agar data terbaru masuk
+      // Jalankan sinkronisasi otomatis setiap fetch
       await autoSyncData();
       
       const { data, error } = await supabase
@@ -181,31 +180,30 @@ export default function AdminRanking() {
     fetchRankings();
   }, [fetchRankings]);
 
-  // --- LOGIKA FILTER & PENCARIAN (DIPERBAIKI AGAR TIDAK KOSONG) ---
+  // --- LOGIKA FILTER & SEARCH (DIPERBAIKI) ---
   const filteredRankings = rankings.filter((r) => {
     const nameStr = (r.player_name || '').toLowerCase();
     const catStr = (r.category || '').toUpperCase();
     const seedStr = (r.seed || '').toUpperCase();
 
-    // 1. Pencarian Nama
+    // 1. Search Name
     const matchSearch = nameStr.includes(searchTerm.toLowerCase());
     
-    // 2. Filter Kategori (Hanya SENIOR & MUDA)
-    // Jika 'Semua', tampilkan SENIOR dan MUDA. Jika dipilih salah satu, filter exact match.
+    // 2. Filter Category (Senior vs Muda)
     const matchCategory = selectedCategory === 'Semua' 
       ? (catStr === 'SENIOR' || catStr === 'MUDA')
       : catStr === selectedCategory.toUpperCase();
 
-    // 3. Filter Seed
+    // 3. Filter Seed (Sesuai Daftar Seed A, B+, B, C, Non-Seed)
     const matchSeed = selectedSeed === 'Semua' || seedStr === selectedSeed.toUpperCase();
 
     return matchSearch && matchCategory && matchSeed;
   });
 
-  // Reset pagination jika filter berubah
+  // Reset pagination saat filter berubah
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedCategory, selectedSeed]);
+  }, [searchTerm, selectedSeed, selectedCategory]);
 
   const totalPages = Math.ceil(filteredRankings.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -223,7 +221,7 @@ export default function AdminRanking() {
       if (uploadError) throw uploadError;
       const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(filePath);
       setFormData((prev) => ({ ...prev, photo_url: publicUrl }));
-      setSuccessMsg('Foto berhasil diunggah!');
+      setSuccessMsg('Foto profil berhasil diunggah!');
     } catch (err: any) {
       alert('Gagal upload: ' + err.message);
     } finally {
@@ -236,7 +234,7 @@ export default function AdminRanking() {
     setFormError(null);
     setIsSaving(true);
     try {
-      if (!formData.player_name) throw new Error('Nama atlet wajib diisi');
+      if (!formData.player_name) throw new Error('Nama atlet tidak boleh kosong');
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
       const added = Number(formData.bonus) || 0;
@@ -268,11 +266,11 @@ export default function AdminRanking() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Hapus data atlet ini secara permanen?')) return;
+    if (!window.confirm('Hapus atlet ini dari daftar ranking?')) return;
     try {
       const { error } = await supabase.from('rankings').delete().eq('id', id);
       if (error) throw error;
-      setSuccessMsg('Data berhasil dihapus');
+      setSuccessMsg('Data telah dihapus');
       fetchRankings();
     } catch (err: any) {
       alert(err.message);
@@ -288,6 +286,7 @@ export default function AdminRanking() {
           </div>
         )}
 
+        {/* Header Section */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
           <div>
             <h1 className="text-5xl font-black italic tracking-tighter uppercase leading-none">
@@ -296,7 +295,7 @@ export default function AdminRanking() {
             <div className="flex items-center gap-2 mt-2">
               <span className="w-2 h-2 bg-blue-600 animate-pulse rounded-full"></span>
               <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em]">
-                SYNC MODE: {rankings.length}/68 ATLET TERDAFTAR
+                SINKRONISASI AKTIF: {rankings.length} ATLET TERDATA
               </p>
             </div>
           </div>
@@ -308,12 +307,12 @@ export default function AdminRanking() {
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Sync Terbaru
             </button>
             <button onClick={() => { setEditingId(null); setFormData({ player_name: '', category: 'SENIOR', seed: 'Non-Seed', poin: 0, bonus: 0 }); setIsModalOpen(true); }} className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 px-6 py-4 rounded-xl font-bold uppercase text-[10px] transition-all shadow-lg shadow-blue-600/20">
-              <Plus size={14} /> Tambah Manual
+              <Plus size={14} /> Tambah Atlet
             </button>
           </div>
         </div>
 
-        {/* SEARCH & FILTER SECTION */}
+        {/* Filter Section (DIPERBAIKI) */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -348,7 +347,7 @@ export default function AdminRanking() {
           </select>
         </div>
 
-        {/* TABLE CONTENT */}
+        {/* Table Content */}
         <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
           <table className="w-full text-left min-w-[1000px]">
             <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
@@ -363,7 +362,7 @@ export default function AdminRanking() {
             </thead>
             <tbody className="divide-y divide-white/5">
               {loading ? (
-                <tr><td colSpan={6} className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse">Menyelaraskan Database...</td></tr>
+                <tr><td colSpan={6} className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse">Menyelaraskan Data...</td></tr>
               ) : paginatedRankings.length > 0 ? (
                 paginatedRankings.map((item, index) => (
                   <tr key={item.id} className="hover:bg-white/[0.02] transition-all group">
@@ -372,7 +371,7 @@ export default function AdminRanking() {
                     </td>
                     <td className="p-5">
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-zinc-800 rounded-full border border-white/10 overflow-hidden ring-2 ring-blue-600/20 shadow-lg shadow-blue-600/10">
+                        <div className="w-12 h-12 bg-zinc-800 rounded-full border border-white/10 overflow-hidden ring-2 ring-blue-600/20 shadow-lg shadow-blue-600/5">
                           {item.photo_url ? <img src={item.photo_url} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center"><User size={20} className="text-zinc-600" /></div>}
                         </div>
                         <p className="font-black uppercase italic text-sm text-white group-hover:text-blue-400 leading-none">{item.player_name}</p>
@@ -384,7 +383,7 @@ export default function AdminRanking() {
                       </span>
                     </td>
                     <td className="p-5">
-                      <span className="bg-zinc-800 border border-white/5 px-3 py-1 rounded-full text-[9px] font-bold text-zinc-300 uppercase italic">{item.seed}</span>
+                      <span className="bg-zinc-800 border border-white/10 px-3 py-1 rounded-full text-[9px] font-bold text-zinc-300 uppercase italic">{item.seed}</span>
                     </td>
                     <td className="p-5 text-center">
                       <span className="text-xl font-black text-white group-hover:text-blue-500 transition-colors">{(item.total_points || 0).toLocaleString()}</span>
@@ -396,13 +395,13 @@ export default function AdminRanking() {
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={6} className="p-20 text-center text-zinc-600 uppercase font-bold text-xs italic">Data tidak ditemukan. Pastikan kategori/seeded sudah benar.</td></tr>
+                <tr><td colSpan={6} className="p-20 text-center text-zinc-600 uppercase font-bold text-xs italic tracking-widest">Data tidak ditemukan pada filter ini</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
-        {/* PAGINATION */}
+        {/* Pagination Controls */}
         {totalPages > 1 && (
           <div className="flex justify-between items-center mt-8">
             <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-tighter">MENAMPILKAN {paginatedRankings.length} DARI {filteredRankings.length} ATLET</p>
@@ -414,7 +413,7 @@ export default function AdminRanking() {
         )}
       </div>
 
-      {/* MODAL FORM */}
+      {/* Modal Form (DIPERBAIKI) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -429,14 +428,14 @@ export default function AdminRanking() {
                 </div>
                 <div className="flex-grow">
                   <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept="image/*" />
-                  <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-zinc-800 px-4 py-2 rounded-xl text-[10px] font-bold uppercase hover:bg-zinc-700 transition-colors">{isUploading ? 'Uploading...' : 'Ganti Foto Profil'}</button>
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="bg-zinc-800 px-4 py-2 rounded-xl text-[10px] font-bold uppercase hover:bg-zinc-700 transition-colors">{isUploading ? 'Uploading...' : 'Unggah Foto Baru'}</button>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2 space-y-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase">Nama Lengkap Atlet</label>
-                  <input required className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none focus:border-blue-600 font-black uppercase text-sm" value={formData.player_name} onChange={(e) => setFormData({ ...formData, player_name: e.target.value })} />
+                  <input required className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none focus:border-blue-600 font-black uppercase text-sm tracking-wide" value={formData.player_name} onChange={(e) => setFormData({ ...formData, player_name: e.target.value })} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase">Kategori Atlet</label>
@@ -466,14 +465,14 @@ export default function AdminRanking() {
               </div>
 
               <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-600/20 flex justify-between items-center shadow-lg">
-                <span className="text-[10px] font-black uppercase text-blue-400 italic tracking-tighter">Akumulasi Total Poin</span>
+                <span className="text-[10px] font-black uppercase text-blue-400 italic">Total Poin Akhir</span>
                 <span className="text-2xl font-black text-white">{((formData.poin || 0) + (formData.bonus || 0)).toLocaleString()}</span>
               </div>
 
               {formError && <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-500 text-[10px] font-bold uppercase"><AlertCircle size={16} /> {formError}</div>}
 
               <button disabled={isSaving || isUploading} className="w-full py-5 bg-blue-600 hover:bg-blue-500 rounded-2xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-3 transition-all shadow-xl shadow-blue-600/20">
-                {isSaving ? <Loader2 className="animate-spin" /> : <Save />} {editingId ? 'PERBARUI DATA ATLET' : 'SIMPAN DATA ATLET'}
+                {isSaving ? <Loader2 className="animate-spin" /> : <Save />} {editingId ? 'SIMPAN PERUBAHAN' : 'TAMBAHKAN ATLET'}
               </button>
             </form>
           </div>
