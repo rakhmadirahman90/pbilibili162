@@ -45,7 +45,7 @@ export default function AdminRanking() {
   const [isUploading, setIsUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSeed, setSelectedSeed] = useState('Semua');
-  const [selectedCategory, setSelectedCategory] = useState('Semua'); // Tambahan filter kategori
+  const [selectedCategory, setSelectedCategory] = useState('Semua'); 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -64,7 +64,11 @@ export default function AdminRanking() {
     photo_url: '',
   });
 
-  // --- FUNGSI EXPORT ---
+  // Reset halaman saat filter berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedSeed, selectedCategory]);
+
   const exportToExcel = () => {
     const fileType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8";
     const fileExtension = ".xlsx";
@@ -257,11 +261,23 @@ export default function AdminRanking() {
     }
   };
 
-  // --- LOGIKA FILTER DIPERBAIKI ---
+  // --- LOGIKA FILTER FIX: Menggunakan includes() dan toUpperCase() ---
   const filteredRankings = rankings.filter((r) => {
-    const matchSearch = (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase());
-    const matchSeed = selectedSeed === 'Semua' || r.seed === selectedSeed;
-    const matchCategory = selectedCategory === 'Semua' || r.category === selectedCategory;
+    const searchLower = searchTerm.toLowerCase().trim();
+    const playerLower = (r.player_name || '').toLowerCase();
+    const categoryUpper = (r.category || '').toUpperCase();
+    const seedUpper = (r.seed || '').toUpperCase();
+
+    const matchSearch = playerLower.includes(searchLower);
+    
+    // Gunakan .includes() agar "SENIOR" cocok dengan "SENIOR - A"
+    const matchCategory = selectedCategory === 'Semua' || 
+                          categoryUpper.includes(selectedCategory.toUpperCase());
+
+    // Gunakan .includes() agar "SEED A" cocok dengan kategori yang mengandung huruf "A" atau string "SEED A"
+    const matchSeed = selectedSeed === 'Semua' || 
+                      seedUpper.includes(selectedSeed.toUpperCase());
+
     return matchSearch && matchSeed && matchCategory;
   });
 
@@ -340,7 +356,7 @@ export default function AdminRanking() {
             />
           </div>
           <select
-            className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer"
+            className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer uppercase"
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
           >
@@ -348,9 +364,10 @@ export default function AdminRanking() {
             <option value="Senior">SENIOR</option>
             <option value="Junior">JUNIOR</option>
             <option value="Veteran">VETERAN</option>
+            <option value="Umum">UMUM</option>
           </select>
           <select
-            className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer"
+            className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer uppercase"
             value={selectedSeed}
             onChange={(e) => setSelectedSeed(e.target.value)}
           >
@@ -449,7 +466,7 @@ export default function AdminRanking() {
               ) : (
                 <tr>
                   <td colSpan={8} className="p-20 text-center text-zinc-500 uppercase font-bold text-xs">
-                    Tidak ada data ditemukan
+                    Data Kosong / Tidak Ditemukan
                   </td>
                 </tr>
               )}
@@ -483,7 +500,7 @@ export default function AdminRanking() {
         )}
       </div>
 
-      {/* Modal Form - Tetap Sama dengan Penyesuaian Style */}
+      {/* Modal Form */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -496,7 +513,6 @@ export default function AdminRanking() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
-              {/* Profile Photo */}
               <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-3xl">
                 <div className="w-20 h-20 bg-zinc-900 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center">
                   {formData.photo_url ? (
@@ -513,7 +529,6 @@ export default function AdminRanking() {
                 </div>
               </div>
 
-              {/* Form Inputs */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2 col-span-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase">Nama Lengkap</label>
@@ -534,6 +549,7 @@ export default function AdminRanking() {
                     <option value="Senior">Senior</option>
                     <option value="Junior">Junior</option>
                     <option value="Veteran">Veteran</option>
+                    <option value="Umum">Umum</option>
                   </select>
                 </div>
                 <div className="space-y-2">
