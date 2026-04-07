@@ -56,13 +56,20 @@ export default function AdminRanking() {
 
   const [formData, setFormData] = useState<Partial<Ranking>>({
     player_name: '',
-    category: 'SENIOR', // Default kapital sesuai database
+    category: 'SENIOR',
     seed: 'Seed A',
     total_points: 0,
     bonus: 0,
     poin: 0,
     photo_url: '',
   });
+
+  // --- FUNGSI HELPER: MAPPING KATEGORI (MUDA/SENIOR) ---
+  const mapCategory = (dbCategory: string): string => {
+    const cat = (dbCategory || '').toUpperCase();
+    if (cat.includes('MUDA') || cat.includes('JUNIOR')) return 'MUDA';
+    return 'SENIOR'; // Default ke Senior jika tidak mengandung kata Muda
+  };
 
   // --- FUNGSI EXPORT ---
   const exportToExcel = () => {
@@ -133,8 +140,7 @@ export default function AdminRanking() {
             return {
               pendaftaran_id: profile.id,
               player_name: profile.nama.trim().toUpperCase(),
-              // Mengambil kategori asli dari pendaftaran dan memastikan UPPERCASE
-              category: (profile.kategori || 'SENIOR').toUpperCase(),
+              category: mapCategory(profile.kategori), // Sinkronisasi Kategori Atlet
               seed: stat.seed || 'Non-Seed',
               photo_url: profile.foto_url || null,
               poin: base,
@@ -148,6 +154,7 @@ export default function AdminRanking() {
         .filter(Boolean);
 
       if (finalDataArray.length > 0) {
+        // Gunakan player_name sebagai kunci unik untuk sinkronisasi
         await supabase.from('rankings').upsert(finalDataArray, { onConflict: 'player_name' });
         return true;
       }
@@ -218,7 +225,7 @@ export default function AdminRanking() {
       const added = Number(formData.bonus) || 0;
       const payload = {
         player_name: cleanName,
-        category: formData.category?.toUpperCase(), // Simpan dalam UPPERCASE
+        category: formData.category,
         seed: formData.seed,
         poin: base,
         bonus: added,
@@ -258,18 +265,17 @@ export default function AdminRanking() {
     }
   };
 
-  // --- LOGIKA FILTER DIPERBAIKI (MENGGUNAKAN UPPERCASE MATCHING) ---
+  // --- LOGIKA FILTER DIPERBAIKI (MUDA & SENIOR) ---
   const filteredRankings = rankings.filter((r) => {
     const matchSearch = (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Filter Seed: Exact match
+    // Filter Seed: Cocokkan string eksak
     const matchSeed = selectedSeed === 'Semua' || r.seed === selectedSeed;
     
-    // Filter Kategori: Menggunakan includes() dan toUpperCase() agar fleksibel jika data "MUDA - A" atau "SENIOR - B"
-    const dbCategory = (r.category || '').toUpperCase();
-    const filterCategory = selectedCategory.toUpperCase();
-    
-    const matchCategory = selectedCategory === 'Semua' || dbCategory.includes(filterCategory);
+    // Filter Kategori: Cocokkan MUDA atau SENIOR secara konsisten
+    const playerCat = mapCategory(r.category); 
+    const filterCat = selectedCategory.toUpperCase();
+    const matchCategory = selectedCategory === 'Semua' || playerCat === filterCat;
     
     return matchSearch && matchSeed && matchCategory;
   });
@@ -336,7 +342,7 @@ export default function AdminRanking() {
           </div>
         </div>
 
-        {/* Filter Section - Diperbarui Kategori */}
+        {/* Filter Section */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -354,8 +360,8 @@ export default function AdminRanking() {
             onChange={(e) => setSelectedCategory(e.target.value)}
           >
             <option value="Semua">SEMUA KATEGORI</option>
-            <option value="MUDA">MUDA</option>
-            <option value="SENIOR">SENIOR</option>
+            <option value="SENIOR">ATLET SENIOR</option>
+            <option value="MUDA">ATLET MUDA</option>
           </select>
           <select
             className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none cursor-pointer"
@@ -378,7 +384,7 @@ export default function AdminRanking() {
               <tr>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center w-20">Rank</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Profil Atlet</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Kategori</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Kategori Atlet</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Seeded</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Base Points</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Added Points</th>
@@ -418,8 +424,12 @@ export default function AdminRanking() {
                       </div>
                     </td>
                     <td className="p-5">
-                      <span className="bg-zinc-800 px-3 py-1 rounded-full text-[9px] font-bold text-zinc-300 uppercase">
-                        {item.category}
+                      <span className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase ${
+                        mapCategory(item.category) === 'SENIOR' 
+                        ? 'bg-orange-600/10 text-orange-500 border border-orange-500/20' 
+                        : 'bg-cyan-600/10 text-cyan-500 border border-cyan-500/20'
+                      }`}>
+                        {mapCategory(item.category)}
                       </span>
                     </td>
                     <td className="p-5">
@@ -457,7 +467,7 @@ export default function AdminRanking() {
               ) : (
                 <tr>
                   <td colSpan={8} className="p-20 text-center text-zinc-500 uppercase font-bold text-xs">
-                    Tidak ada data ditemukan (Kategori: {selectedCategory})
+                    Tidak ada data ditemukan
                   </td>
                 </tr>
               )}
@@ -491,7 +501,7 @@ export default function AdminRanking() {
         )}
       </div>
 
-      {/* Modal Form - Diperbarui Kategori */}
+      {/* Modal Form */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -504,6 +514,7 @@ export default function AdminRanking() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
+              {/* Profile Photo */}
               <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-3xl">
                 <div className="w-20 h-20 bg-zinc-900 rounded-2xl overflow-hidden border border-white/10 flex items-center justify-center">
                   {formData.photo_url ? (
@@ -520,6 +531,7 @@ export default function AdminRanking() {
                 </div>
               </div>
 
+              {/* Form Inputs */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2 col-span-2">
                   <label className="text-[10px] font-black text-zinc-500 uppercase">Nama Lengkap</label>
@@ -537,8 +549,8 @@ export default function AdminRanking() {
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                   >
-                    <option value="MUDA">MUDA</option>
                     <option value="SENIOR">SENIOR</option>
+                    <option value="MUDA">MUDA</option>
                   </select>
                 </div>
                 <div className="space-y-2">
