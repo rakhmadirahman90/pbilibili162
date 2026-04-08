@@ -47,8 +47,11 @@ import AdminStructure from './components/AdminStructure';
 import { KelolaSurat } from './components/KelolaSurat'; 
 import KasManager from './components/KasManager'; // BARU: Import Kelola Kas
 
-import { X, ChevronLeft, ChevronRight, Menu, Zap, Download, ArrowUp, ExternalLink, Wallet, ArrowLeft } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Menu, Zap, Download, ArrowUp, ExternalLink, Wallet, ArrowLeft, Music, Volume2, VolumeX } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// --- KONSTANTA AUDIO ---
+const MARS_URL = "https://missjyvqfehamtpyodjr.supabase.co/storage/v1/object/public/assets/Mars%20US162.mp3";
 
 // HELPER: Auto Scroll ke atas setiap pindah route
 function ScrollToTop() {
@@ -193,6 +196,37 @@ export default function App() {
   const [showStruktur, setShowStruktur] = useState(false); 
   const [showKas, setShowKas] = useState(false); // BARU: State untuk menampilkan Laporan Kas
 
+  // --- AUDIO LOGIC ---
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [isMarsPlaying, setIsMarsPlaying] = useState(false);
+
+  useEffect(() => {
+    // Fungsi untuk memutar audio
+    const startMars = () => {
+      if (audioRef.current && !isMarsPlaying) {
+        audioRef.current.volume = 0.4;
+        audioRef.current.play()
+          .then(() => setIsMarsPlaying(true))
+          .catch(() => console.log("Autoplay blocked. Waiting for user interaction."));
+      }
+    };
+
+    // Autoplay trigger pada interaksi pertama (klik mana saja)
+    const handleFirstInteraction = () => {
+      startMars();
+      window.removeEventListener('click', handleFirstInteraction);
+      window.removeEventListener('touchstart', handleFirstInteraction);
+    };
+
+    window.addEventListener('click', handleFirstInteraction);
+    window.addEventListener('touchstart', handleFirstInteraction);
+
+    return () => {
+      window.removeEventListener('click', handleFirstInteraction);
+      window.removeEventListener('touchstart', handleFirstInteraction);
+    };
+  }, [isMarsPlaying]);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -258,11 +292,43 @@ export default function App() {
   return (
     <Router>
       <ScrollToTop />
+      {/* GLOBAL AUDIO PLAYER */}
+      <audio ref={audioRef} src={MARS_URL} loop />
+      
       <Routes>
         <Route path="/" element={
           <div className="min-h-screen bg-white selection:bg-blue-600 selection:text-white w-full overflow-x-hidden">
             <ImagePopup />
             <Navbar onNavigate={handleNavigate} />
+            
+            {/* FLOATING MUSIC CONTROLLER */}
+            <div className="fixed bottom-6 right-6 z-[99999] flex flex-col items-end gap-3 pointer-events-none">
+                <AnimatePresence>
+                  {isMarsPlaying && (
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="bg-white/90 backdrop-blur-md border border-slate-200 px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3">
+                        <div className="flex gap-1">
+                           {[1,2,3,4].map(i => <motion.div key={i} animate={{ height: [4, 12, 4] }} transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.1 }} className="w-1 bg-blue-600 rounded-full" />)}
+                        </div>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-800 italic">Mars PB 162 Playing</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <motion.button 
+                  whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
+                  onClick={() => {
+                    if (audioRef.current) {
+                      if (isMarsPlaying) audioRef.current.pause();
+                      else audioRef.current.play();
+                      setIsMarsPlaying(!isMarsPlaying);
+                    }
+                  }}
+                  className="pointer-events-auto w-14 h-14 bg-slate-900 text-white rounded-full shadow-2xl flex items-center justify-center border border-white/10 group overflow-hidden relative"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-tr from-blue-600 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  {isMarsPlaying ? <Volume2 size={20} className="relative z-10" /> : <VolumeX size={20} className="relative z-10 text-slate-400" />}
+                </motion.button>
+            </div>
+
             <AnimatePresence mode="wait">
               {/* LOGIKA TAMPILAN DINAMIS */}
               {!showStruktur && !showKas ? (
