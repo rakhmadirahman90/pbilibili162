@@ -97,8 +97,6 @@ export default function KasManager() {
     return curr.jenis_transaksi === 'Masuk' ? acc + curr.jumlah_bayar : acc - curr.jumlah_bayar;
   }, 0);
 
-  // LOGIKA BARU: Menghitung saldo akhir tepat pada tanggal 'endDate'
-  // Ini mengambil semua transaksi dari awal waktu sampai tanggal akhir yang dipilih user
   const saldoAkhirKumulatif = normalizedData
     .filter(item => item.tanggal_transaksi <= endDate)
     .reduce((acc, curr) => {
@@ -127,7 +125,7 @@ export default function KasManager() {
   const exportToPDF = async () => {
     try {
       const doc = new jsPDF('p', 'mm', 'a4');
-      const fullDateStr = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      const fullDateStr = new Date().toLocaleString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       const locationDate = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
       try {
@@ -150,7 +148,7 @@ export default function KasManager() {
 
       const tableRows = filteredData.map(item => [
         new Date(item.tanggal_transaksi).toLocaleDateString('id-ID'),
-        item.nama_pembayar || '-',
+        item.nama_pembayar?.toUpperCase() || '-',
         item.jenis_transaksi,
         item.kategori,
         item.jumlah_bola > 0 ? `${item.jumlah_bola} Pcs` : '-',
@@ -164,16 +162,32 @@ export default function KasManager() {
         theme: 'striped',
         headStyles: { fillColor: [30, 64, 175], textColor: 255, fontSize: 9, fontStyle: 'bold', halign: 'center' },
         bodyStyles: { fontSize: 8, textColor: 50 },
-        columnStyles: { 0: { halign: 'center', cellWidth: 25 }, 2: { halign: 'center', cellWidth: 20 }, 4: { halign: 'center', cellWidth: 20 }, 5: { halign: 'right', fontStyle: 'bold' } },
+        columnStyles: { 
+            0: { halign: 'center', cellWidth: 22 }, 
+            2: { halign: 'center', cellWidth: 18 }, 
+            4: { halign: 'center', cellWidth: 20 }, 
+            5: { halign: 'right', fontStyle: 'bold', cellWidth: 35 } 
+        },
         didParseCell: (data) => {
             if (data.section === 'body' && data.column.index === 2) {
                 if (data.cell.raw === 'Masuk') data.cell.styles.textColor = [16, 185, 129];
                 if (data.cell.raw === 'Keluar') data.cell.styles.textColor = [239, 68, 68];
             }
-        }
+        },
+        margin: { bottom: 60 } // Memberi ruang agar footer tidak menabrak baris terakhir
       });
 
-      const finalY = (doc as any).lastAutoTable.finalY + 10;
+      // Menentukan posisi Y untuk footer berdasarkan akhir tabel atau halaman baru jika tidak cukup
+      let finalY = (doc as any).lastAutoTable.finalY + 10;
+      const pageHeight = doc.internal.pageSize.height;
+
+      // Proteksi jika sisa ruang di bawah tabel kurang dari 60mm, pindah ke halaman baru
+      if (finalY > pageHeight - 70) {
+        doc.addPage();
+        finalY = 20;
+      }
+
+      // Kotak Ringkasan
       doc.setDrawColor(230, 230, 230).setFillColor(248, 250, 252).roundedRect(110, finalY, 85, 30, 2, 2, 'FD');
       doc.setFontSize(9).setFont("helvetica", "bold").setTextColor(50);
       
@@ -185,22 +199,27 @@ export default function KasManager() {
       
       doc.setDrawColor(200).line(115, finalY + 18, 190, finalY + 18);
       
-      // PERBAIKAN: Menggunakan Saldo Kumulatif sampai tanggal endDate
       doc.setTextColor(30, 64, 175).text(`Saldo Akhir Kas:`, 115, finalY + 24);
       doc.text(`Rp ${saldoAkhirKumulatif.toLocaleString()}`, 190, finalY + 24, { align: 'right' });
 
-      const signY = finalY + 50;
+      // Tanda Tangan
+      const signY = finalY + 45;
       doc.setFontSize(10).setFont("helvetica", "normal").setTextColor(0);
-      doc.text(`Parepare, ${locationDate}`, 150, signY - 8); 
+      doc.text(`Parepare, ${locationDate}`, 155, signY - 5); 
+      
       doc.setFont("helvetica", "bold").text('Mengetahui,', 15, signY);
       doc.text('Ketua PB. Bili Bili 162', 15, signY + 6);
-      doc.text('H. WAWAN', 15, signY + 32);
-      doc.setDrawColor(0).setLineWidth(0.3).line(15, signY + 33, 60, signY + 33);
-      doc.text('Bendahara Umum,', 150, signY + 6);
-      doc.text('MUH. NUR', 150, signY + 32);
-      doc.line(150, signY + 33, 195, signY + 33);
-      doc.setFontSize(8).setFont("helvetica", "italic").setTextColor(150);
+      doc.text('H. WAWAN', 15, signY + 30);
+      doc.setDrawColor(0).setLineWidth(0.3).line(15, signY + 31, 60, signY + 31);
+      
+      doc.text('Bendahara Umum,', 155, signY + 6);
+      doc.text('MUH. NUR', 155, signY + 30);
+      doc.line(155, signY + 31, 195, signY + 31);
+
+      // Watermark / Generated Info
+      doc.setFontSize(8).setFont("helvetica", "italic").setTextColor(180);
       doc.text(`* Dokumen ini digenerate secara otomatis melalui Treasury Master System pada ${fullDateStr}`, 15, 285);
+      
       doc.save(`LPJ_KAS_PB162_${startDate}_TO_${endDate}.pdf`);
     } catch (error) { 
       console.error(error);
