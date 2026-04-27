@@ -44,16 +44,21 @@ export default function Navbar({ onNavigate }: NavbarProps) {
           { id: '2-4', parent_id: '2', label: 'Dokumen Penting', path: 'dokumen-penting' } // Fallback Dokumen
         ];
       } else {
-        // Cek apakah menu 'kas' sudah ada
+        // Cek apakah menu 'kas' sudah ada secara global
         const hasKas = finalNav.some((item: any) => item.path === 'kas');
         if (!hasKas) {
           finalNav.push({ id: 'kas-dynamic', label: 'Kas', path: 'kas', type: 'link', order_index: 98 });
         }
         
-        // Cek apakah menu 'dokumen-penting' sudah ada di bawah 'Tentang Kami'
-        const parentTentang = finalNav.find((item: any) => item.path === 'tentang-kami');
+        // Cek keberadaan parent "Tentang Kami" (case-insensitive check)
+        const parentTentang = finalNav.find((item: any) => 
+          item.path === 'tentang-kami' || item.label.toLowerCase().includes('tentang')
+        );
+
+        // Cek apakah 'dokumen-penting' sudah ada di dalam data database
         const hasDocs = finalNav.some((item: any) => item.path === 'dokumen-penting');
         
+        // Jika belum ada di database tapi parent-nya ada, sisipkan secara programatik
         if (!hasDocs && parentTentang) {
           finalNav.push({ 
             id: 'docs-dynamic', 
@@ -120,7 +125,7 @@ export default function Navbar({ onNavigate }: NavbarProps) {
       return;
     }
 
-    // 3. Penanganan Khusus Dokumen Penting
+    // 3. Penanganan Khusus Dokumen Penting (Sangat penting untuk pemicu di App.tsx)
     if (subPath === 'dokumen-penting' || path === 'dokumen-penting') {
       onNavigate('dokumen-penting');
       scrollToSection('dokumen-section');
@@ -134,7 +139,7 @@ export default function Navbar({ onNavigate }: NavbarProps) {
       return;
     }
 
-    // 5. Penanganan Section Lain
+    // 5. Penanganan Section Lain secara umum
     onNavigate(path, subPath);
     scrollToSection(subPath || path);
   };
@@ -174,7 +179,7 @@ export default function Navbar({ onNavigate }: NavbarProps) {
 
         {/* DESKTOP NAV */}
         <div className="hidden md:flex items-center gap-8">
-          {navData.filter(item => !item.parent_id).map((menu) => (
+          {navData.filter(item => !item.parent_id).sort((a, b) => a.order_index - b.order_index).map((menu) => (
             <div 
               key={menu.id} 
               className="relative h-20 flex items-center"
@@ -182,7 +187,7 @@ export default function Navbar({ onNavigate }: NavbarProps) {
               onMouseLeave={() => setActiveDropdown(null)}
             >
               <button 
-                onClick={() => handleNavClick(menu.path)}
+                onClick={() => menu.type !== 'dropdown' && handleNavClick(menu.path)}
                 className={`nav-link flex items-center gap-1.5 ${activeDropdown === menu.id ? 'text-blue-400' : ''} ${menu.path === 'kas' ? 'text-blue-400 font-black' : ''}`}
               >
                 {menu.path === 'kas' && <Wallet size={12} className="mr-1" />}
@@ -200,7 +205,7 @@ export default function Navbar({ onNavigate }: NavbarProps) {
                         className="dropdown-item flex items-center justify-between"
                       >
                         {sub.label}
-                        {sub.path === 'dokumen-penting' && <FileText size={10} className="text-blue-500 opacity-50" />}
+                        {sub.path === 'dokumen-penting' && <FileText size={12} className="text-blue-500 opacity-80" />}
                       </button>
                     ))}
                   </div>
@@ -239,11 +244,11 @@ export default function Navbar({ onNavigate }: NavbarProps) {
       {/* MOBILE MENU */}
       {isMobileMenuOpen && (
         <div className="md:hidden absolute top-20 left-0 w-full bg-slate-900 border-b border-white/10 p-6 flex flex-col gap-4 shadow-2xl max-h-[calc(100vh-80px)] overflow-y-auto">
-          {navData.filter(item => !item.parent_id).map((menu) => (
+          {navData.filter(item => !item.parent_id).sort((a, b) => a.order_index - b.order_index).map((menu) => (
             <React.Fragment key={menu.id}>
               <button 
                 onClick={() => menu.type !== 'dropdown' ? handleNavClick(menu.path) : (activeDropdown === menu.id ? setActiveDropdown(null) : setActiveDropdown(menu.id))}
-                className={`mobile-nav-link flex justify-between items-center ${activeDropdown === menu.id ? 'text-blue-400' : ''} ${menu.path === 'kas' ? 'text-blue-400' : ''}`}
+                className={`mobile-nav-link flex justify-between items-center ${activeDropdown === menu.id ? 'text-blue-400' : ''} ${menu.path === 'kas' ? 'text-blue-400 font-black' : ''}`}
               >
                 <span className="flex items-center gap-2">
                   {menu.path === 'kas' && <Wallet size={16} />}
@@ -254,7 +259,7 @@ export default function Navbar({ onNavigate }: NavbarProps) {
               {menu.type === 'dropdown' && activeDropdown === menu.id && (
                 <div className="flex flex-col gap-4 pl-4 border-l-2 border-blue-500/30 ml-2 py-2 animate-in slide-in-from-left-2 duration-200">
                   {getSubMenus(menu.id).map((sub) => (
-                    <button key={sub.id} onClick={() => handleNavClick(menu.path, sub.path)} className="mobile-sub-link hover:text-white transition-colors flex items-center justify-between">
+                    <button key={sub.id} onClick={() => handleNavClick(menu.path, sub.path)} className="mobile-sub-link hover:text-white transition-colors flex items-center justify-between pr-2">
                       {sub.label}
                       {sub.path === 'dokumen-penting' && <FileText size={14} className="text-blue-500" />}
                     </button>
