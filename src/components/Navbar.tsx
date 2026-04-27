@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Globe, ChevronDown, Menu, X, MapPin, UserPlus, Wallet } from 'lucide-react';
+import { Globe, ChevronDown, Menu, X, MapPin, UserPlus, Wallet, FileText } from 'lucide-react';
 import { supabase } from '../supabase'; 
 
 interface NavbarProps {
@@ -19,7 +19,7 @@ export default function Navbar({ onNavigate }: NavbarProps) {
     default_lang: 'ID'
   });
 
-  // --- FETCH DATA NAVIGASI DENGAN PENAMBAHAN MENU KAS ---
+  // --- FETCH DATA NAVIGASI DENGAN PENAMBAHAN MENU KAS & DOKUMEN PENTING ---
   const fetchNavSettings = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -37,16 +37,30 @@ export default function Navbar({ onNavigate }: NavbarProps) {
           { id: '1', label: 'Home', path: 'home', type: 'link', order_index: 0 },
           { id: '2', label: 'Tentang Kami', path: 'tentang-kami', type: 'dropdown', order_index: 1 },
           { id: '3', label: 'Berita', path: 'berita', type: 'link', order_index: 2 },
-          { id: '4', label: 'Kas', path: 'kas', type: 'link', order_index: 3 }, // Menu KAS Manual Fallback
+          { id: '4', label: 'Kas', path: 'kas', type: 'link', order_index: 3 },
           { id: '2-1', parent_id: '2', label: 'Sejarah', path: 'sejarah' },
           { id: '2-2', parent_id: '2', label: 'Visi Misi', path: 'visi-misi' },
-          { id: '2-3', parent_id: '2', label: 'Fasilitas', path: 'fasilitas' }
+          { id: '2-3', parent_id: '2', label: 'Fasilitas', path: 'fasilitas' },
+          { id: '2-4', parent_id: '2', label: 'Dokumen Penting', path: 'dokumen-penting' } // Fallback Dokumen
         ];
       } else {
-        // Cek apakah menu 'kas' sudah ada di database, jika belum tambahkan secara lokal
+        // Cek apakah menu 'kas' sudah ada
         const hasKas = finalNav.some((item: any) => item.path === 'kas');
         if (!hasKas) {
-          finalNav.push({ id: 'kas-dynamic', label: 'Kas', path: 'kas', type: 'link', order_index: 99 });
+          finalNav.push({ id: 'kas-dynamic', label: 'Kas', path: 'kas', type: 'link', order_index: 98 });
+        }
+        
+        // Cek apakah menu 'dokumen-penting' sudah ada di bawah 'Tentang Kami'
+        const parentTentang = finalNav.find((item: any) => item.path === 'tentang-kami');
+        const hasDocs = finalNav.some((item: any) => item.path === 'dokumen-penting');
+        
+        if (!hasDocs && parentTentang) {
+          finalNav.push({ 
+            id: 'docs-dynamic', 
+            parent_id: parentTentang.id, 
+            label: 'Dokumen Penting', 
+            path: 'dokumen-penting' 
+          });
         }
       }
       
@@ -102,38 +116,35 @@ export default function Navbar({ onNavigate }: NavbarProps) {
     // 2. Penanganan Khusus Menu KAS
     if (path === 'kas') {
       onNavigate('kas');
-      setTimeout(() => {
-        const element = document.getElementById('kas-section'); // Pastikan ID di landing page sesuai
-        if (element) {
-          const offset = 100;
-          const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
-          window.scrollTo({ top: elementPosition - offset, behavior: 'smooth' });
-        }
-      }, 100);
+      scrollToSection('kas-section');
       return;
     }
 
-    // 3. Jika Path adalah 'tentang-kami'
+    // 3. Penanganan Khusus Dokumen Penting
+    if (subPath === 'dokumen-penting' || path === 'dokumen-penting') {
+      onNavigate('dokumen-penting');
+      scrollToSection('dokumen-section');
+      return;
+    }
+
+    // 4. Jika Path adalah 'tentang-kami'
     if (path === 'tentang-kami' || path === 'about') {
       onNavigate('tentang-kami', subPath);
-      setTimeout(() => {
-        const element = document.getElementById('tentang-kami');
-        if (element) {
-          const offset = 100;
-          const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
-          window.scrollTo({ top: elementPosition - offset, behavior: 'smooth' });
-        }
-      }, 100);
+      scrollToSection('tentang-kami');
       return;
     }
 
-    // 4. Penanganan Section Lain
+    // 5. Penanganan Section Lain
     onNavigate(path, subPath);
+    scrollToSection(subPath || path);
+  };
+
+  // Helper Smooth Scroll
+  const scrollToSection = (id: string) => {
     setTimeout(() => {
-      const targetId = subPath || path;
-      const element = document.getElementById(targetId);
+      const element = document.getElementById(id);
       if (element) {
-        const offset = 90;
+        const offset = 100;
         const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
         window.scrollTo({ top: elementPosition - offset, behavior: 'smooth' });
       }
@@ -186,9 +197,10 @@ export default function Navbar({ onNavigate }: NavbarProps) {
                       <button 
                         key={sub.id} 
                         onClick={() => handleNavClick(menu.path, sub.path)} 
-                        className="dropdown-item"
+                        className="dropdown-item flex items-center justify-between"
                       >
                         {sub.label}
+                        {sub.path === 'dokumen-penting' && <FileText size={10} className="text-blue-500 opacity-50" />}
                       </button>
                     ))}
                   </div>
@@ -242,8 +254,9 @@ export default function Navbar({ onNavigate }: NavbarProps) {
               {menu.type === 'dropdown' && activeDropdown === menu.id && (
                 <div className="flex flex-col gap-4 pl-4 border-l-2 border-blue-500/30 ml-2 py-2 animate-in slide-in-from-left-2 duration-200">
                   {getSubMenus(menu.id).map((sub) => (
-                    <button key={sub.id} onClick={() => handleNavClick(menu.path, sub.path)} className="mobile-sub-link hover:text-white transition-colors">
+                    <button key={sub.id} onClick={() => handleNavClick(menu.path, sub.path)} className="mobile-sub-link hover:text-white transition-colors flex items-center justify-between">
                       {sub.label}
+                      {sub.path === 'dokumen-penting' && <FileText size={14} className="text-blue-500" />}
                     </button>
                   ))}
                 </div>
@@ -272,7 +285,6 @@ export default function Navbar({ onNavigate }: NavbarProps) {
         .mobile-nav-link { font-size: 14px; font-weight: 900; text-transform: uppercase; color: #f8fafc; font-style: italic; transition: all 0.2s; }
         .mobile-sub-link { text-align: left; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; padding: 4px 0; }
         
-        /* Utility animations */
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideInFromTop { from { transform: translateY(-10px); } to { transform: translateY(0); } }
         .animate-in { animation: fadeIn 0.2s ease-out, slideInFromTop 0.2s ease-out; }
