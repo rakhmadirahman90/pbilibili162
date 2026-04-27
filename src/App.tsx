@@ -16,7 +16,8 @@ import Gallery from './components/Gallery';
 import RegistrationForm from './components/RegistrationForm'; 
 import Contact from './components/Contact'; 
 import Footer from './components/Footer';
-import PublicKasView from './components/PublicKasView'; // BARU: View Publik untuk Anggota
+import PublicKasView from './components/PublicKasView';
+import DokumenPenting from './components/DokumenPenting'; // BARU: View Publik untuk Dokumen
 
 // Komponen yang tampil di depan (Landing Page)
 import StrukturOrganisasi from './components/StrukturOrganisasi'; 
@@ -41,13 +42,13 @@ import KelolaHero from './components/KelolaHero';
 import AdminPopup from './components/AdminPopup'; 
 import AdminFooter from './components/AdminFooter'; 
 import AdminAbout from './components/AdminAbout';
-// Komponen yang digunakan untuk mengedit urutan (Admin)
 import AdminStructure from './components/AdminStructure'; 
+import ManajemenDokumen from './components/ManajemenDokumen'; // BARU: Admin Kelola Dokumen
 
 import { KelolaSurat } from './components/KelolaSurat'; 
-import KasManager from './components/KasManager'; // BARU: Import Kelola Kas
+import KasManager from './components/KasManager'; 
 
-import { X, ChevronLeft, ChevronRight, Menu, Zap, Download, ArrowUp, ExternalLink, Wallet, ArrowLeft, Music, Volume2, VolumeX } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Menu, Zap, Download, ArrowUp, ExternalLink, Wallet, ArrowLeft, Music, Volume2, VolumeX, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // --- KONSTANTA AUDIO ---
@@ -194,24 +195,23 @@ export default function App() {
   const [activeAboutTab, setActiveAboutTab] = useState('sejarah');
   const [activeAthleteFilter, setActiveAthleteFilter] = useState('all');
   const [showStruktur, setShowStruktur] = useState(false); 
-  const [showKas, setShowKas] = useState(false); // BARU: State untuk menampilkan Laporan Kas
+  const [showKas, setShowKas] = useState(false); 
+  const [showDokumen, setShowDokumen] = useState(false); // BARU: State untuk halaman Dokumen
 
   // --- AUDIO LOGIC ---
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isMarsPlaying, setIsMarsPlaying] = useState(false);
 
   useEffect(() => {
-    // Fungsi untuk memutar audio
     const startMars = () => {
       if (audioRef.current && !isMarsPlaying) {
         audioRef.current.volume = 0.4;
         audioRef.current.play()
           .then(() => setIsMarsPlaying(true))
-          .catch(() => console.log("Autoplay blocked. Waiting for user interaction."));
+          .catch(() => console.log("Autoplay blocked."));
       }
     };
 
-    // Autoplay trigger pada interaksi pertama (klik mana saja)
     const handleFirstInteraction = () => {
       startMars();
       window.removeEventListener('click', handleFirstInteraction);
@@ -243,6 +243,7 @@ export default function App() {
     if (sectionId === 'kas') {
         setShowKas(true);
         setShowStruktur(false);
+        setShowDokumen(false);
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
     }
@@ -251,6 +252,16 @@ export default function App() {
     if (sectionId === 'struktur' || subPath === 'organisasi' || sectionId === 'organization') {
         setShowStruktur(true);
         setShowKas(false);
+        setShowDokumen(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+    }
+
+    // Penanganan Navigasi Dokumen Penting
+    if (sectionId === 'dokumen-penting' || subPath === 'dokumen-penting') {
+        setShowDokumen(true);
+        setShowStruktur(false);
+        setShowKas(false);
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
     }
@@ -258,6 +269,7 @@ export default function App() {
     // Reset view khusus jika menavigasi ke section landing page biasa
     setShowStruktur(false);
     setShowKas(false);
+    setShowDokumen(false);
 
     if (sectionId === 'tentang-kami' || ['sejarah', 'visi-misi', 'fasilitas'].includes(subPath || '')) {
       if (subPath) setActiveAboutTab(subPath);
@@ -292,7 +304,6 @@ export default function App() {
   return (
     <Router>
       <ScrollToTop />
-      {/* GLOBAL AUDIO PLAYER */}
       <audio ref={audioRef} src={MARS_URL} loop />
       
       <Routes>
@@ -331,7 +342,7 @@ export default function App() {
 
             <AnimatePresence mode="wait">
               {/* LOGIKA TAMPILAN DINAMIS */}
-              {!showStruktur && !showKas ? (
+              {!showStruktur && !showKas && !showDokumen ? (
                 <motion.div key="landing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full">
                   <Hero />
                   <About activeTab={activeAboutTab} onTabChange={(id) => setActiveAboutTab(id)} />
@@ -357,7 +368,7 @@ export default function App() {
                     <ArrowLeft size={16} /> Kembali ke Beranda
                   </motion.button>
                 </motion.div>
-              ) : (
+              ) : showKas ? (
                 <motion.div key="kas-view" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="pt-32 pb-20 bg-slate-50 min-h-screen w-full">
                   <div id="kas-section">
                     <PublicKasView />
@@ -366,6 +377,19 @@ export default function App() {
                     whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                     onClick={() => { setShowKas(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                     className="fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-blue-600 text-white rounded-full font-black text-[11px] tracking-[0.2em] shadow-2xl z-50 uppercase flex items-center gap-3 border border-white/10"
+                  >
+                    <ArrowLeft size={16} /> Kembali ke Beranda
+                  </motion.button>
+                </motion.div>
+              ) : (
+                <motion.div key="dokumen-view" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="bg-slate-50 min-h-screen w-full">
+                  <div id="dokumen-section">
+                    <DokumenPenting />
+                  </div>
+                  <motion.button 
+                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                    onClick={() => { setShowDokumen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    className="fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-slate-900 text-white rounded-full font-black text-[11px] tracking-[0.2em] shadow-2xl z-50 uppercase flex items-center gap-3 border border-white/10"
                   >
                     <ArrowLeft size={16} /> Kembali ke Beranda
                   </motion.button>
@@ -400,7 +424,8 @@ function AdminLayout({ session }: { session: any }) {
             <Route path="dashboard" element={<ManajemenPendaftaran />} />
             <Route path="atlet" element={<ManajemenAtlet />} />
             <Route path="surat" element={<KelolaSurat />} />
-            <Route path="kas" element={<KasManager />} /> {/* BARU: Route Kelola Kas */}
+            <Route path="kas" element={<KasManager />} />
+            <Route path="dokumen" element={<ManajemenDokumen />} /> {/* BARU: Route Kelola Dokumen */}
             <Route path="poin" element={<ManajemenPoin />} />
             <Route path="audit-poin" element={<AuditLogPoin />} />
             <Route path="skor" element={<AdminMatch />} />
