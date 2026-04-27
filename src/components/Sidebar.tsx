@@ -28,7 +28,8 @@ import {
   Info,
   Network,
   Mail,
-  Wallet // TAMBAHAN: Ikon untuk Kelola Kas
+  Wallet,
+  FileText // TAMBAHAN: Ikon untuk Kelola Dokumen
 } from 'lucide-react';
 import { supabase } from '../supabase';
 
@@ -89,8 +90,9 @@ export default function Sidebar({ email, isOpen, onClose }: SidebarProps) {
       section: 'Data & Analytics',
       items: [
         { name: 'Laporan & Rekap', path: '/admin/laporan', icon: BarChart3 },
-        { name: 'Kelola Kas', path: '/admin/kas', icon: Wallet }, // BARU: Menu Kelola Kas
+        { name: 'Kelola Kas', path: '/admin/kas', icon: Wallet }, 
         { name: 'Kelola Surat', path: '/admin/surat', icon: Mail },
+        { name: 'Kelola Dokumen', path: '/admin/dokumen', icon: FileText }, // TAMBAHAN: Link Menu Dokumen Baru
         { name: 'Log Aktivitas', path: '/admin/logs', icon: FileSearch },
       ]
     },
@@ -128,7 +130,7 @@ export default function Sidebar({ email, isOpen, onClose }: SidebarProps) {
       `}>
         {/* Dynamic Background Gradients */}
         <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-blue-600/10 to-transparent blur-3xl -z-10 opacity-50" />
-        <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-t from-red-600/5 to-transparent blur-3xl -z-10 opacity-30" />
+        <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-red-600/5 to-transparent blur-3xl -z-10 opacity-30" />
 
         {/* Brand Header & Close Button Mobile */}
         <div className="flex items-center justify-between mb-12 flex-shrink-0">
