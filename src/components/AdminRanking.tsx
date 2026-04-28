@@ -113,17 +113,15 @@ export default function AdminRanking() {
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
 
-  // --- PERBAIKAN LOGIKA SINKRONISASI DATA ---
+  // --- LOGIKA SINKRONISASI DATA (Sesuai Gambar: Added Points berasal dari atlet_stats.total_points) ---
   const autoSyncData = useCallback(async () => {
     try {
-      // 1. Ambil data stats terbaru (Poin Tambahan/Added Points ada di kolom 'total_points' pada tabel atlet_stats)
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
 
       if (statsError) throw statsError;
 
-      // 2. Ambil profil pendaftaran
       const { data: pendaftaranData, error: pendaftaranError } = await supabase
         .from('pendaftaran')
         .select('id, nama, foto_url, kategori_atlet');
@@ -134,8 +132,6 @@ export default function AdminRanking() {
         .map((stat) => {
           const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
           if (profile) {
-            // poin = Base Points (statis/dari pendaftaran)
-            // bonus = Added Points (dari manajemen poin/atlet_stats.total_points)
             const base = Number(stat.points) || 0;
             const added = Number(stat.total_points) || 0;
 
@@ -162,7 +158,6 @@ export default function AdminRanking() {
         .filter(Boolean);
 
       if (finalDataArray.length > 0) {
-        // Upsert ke tabel rankings
         const { error: upsertError } = await supabase
           .from('rankings')
           .upsert(finalDataArray, { onConflict: 'player_name' });
@@ -180,10 +175,7 @@ export default function AdminRanking() {
   const fetchRankings = useCallback(async () => {
     setLoading(true);
     try {
-      // Jalankan sinkronisasi dulu
       await autoSyncData();
-      
-      // Ambil data dari tabel rankings yang sudah ter-update
       const { data, error } = await supabase
         .from('rankings')
         .select('*')
@@ -236,6 +228,7 @@ export default function AdminRanking() {
     setIsSaving(true);
     try {
       if (!formData.player_name) throw new Error('Nama atlet wajib diisi');
+      
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
       const added = Number(formData.bonus) || 0;
@@ -248,9 +241,11 @@ export default function AdminRanking() {
         bonus: added,
         total_points: base + added,
         photo_url: formData.photo_url || null,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        pendaftaran_id: formData.pendaftaran_id 
       };
 
+      // 1. Update/Upsert ke tabel Rankings
       let error;
       if (editingId) {
         const { error: updateError } = await supabase.from('rankings').update(payload).eq('id', editingId);
@@ -259,13 +254,29 @@ export default function AdminRanking() {
         const { error: upsertError } = await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
         error = upsertError;
       }
-      
       if (error) throw error;
+
+      // 2. PERBAIKAN KRUSIAL: Sinkronisasi balik ke atlet_stats (Manajemen Poin)
+      // Hal ini memastikan data di "Manajemen Poin" selalu sama dengan "Manajemen Ranking"
+      if (formData.pendaftaran_id) {
+        // Konversi Seed kembali ke format database atlet_stats (A, B+, dll)
+        let dbSeed = formData.seed?.replace('Seed ', '') || 'Non-Seed';
+        
+        await supabase
+          .from('atlet_stats')
+          .update({
+            points: base,
+            total_points: added, // Sesuai logika: Added Points disimpan di kolom total_points pada atlet_stats
+            seed: dbSeed,
+            updated_at: new Date().toISOString()
+          })
+          .eq('pendaftaran_id', formData.pendaftaran_id);
+      }
       
       setIsModalOpen(false);
       setEditingId(null);
-      setSuccessMsg('Data ranking berhasil diperbarui!');
-      fetchRankings(); // Memicu fetch ulang untuk sinkronisasi tampilan
+      setSuccessMsg('Data ranking & stats berhasil disinkronkan!');
+      fetchRankings();
     } catch (err: any) {
       setFormError(err.message);
     } finally {
