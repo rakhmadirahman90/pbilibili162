@@ -64,29 +64,29 @@ export default function AdminRanking() {
     photo_url: '',
   });
 
-  // --- LOGIKA SINKRONISASI DATA UTAMA (PERBAIKAN SINKRONISASI) ---
+  // --- LOGIKA SINKRONISASI DATA UTAMA (FIXED: Added Points = atlet_stats.total_points) ---
   const autoSyncData = useCallback(async () => {
     try {
-      // Ambil data stats terbaru
+      // 1. Tarik data stats terbaru
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
 
       if (statsError) throw statsError;
 
-      // Ambil data profil terbaru
+      // 2. Tarik data profil terbaru
       const { data: pendaftaranData, error: pendaftaranError } = await supabase
         .from('pendaftaran')
         .select('id, nama, foto_url, kategori_atlet');
 
       if (pendaftaranError) throw pendaftaranError;
 
-      // Mapping data dengan logika Added Points (bonus) = atlet_stats.total_points
+      // 3. Mapping data: Memastikan bonus di tabel rankings mengambil nilai total_points dari atlet_stats
       const finalDataArray = (statsData || []).map((stat) => {
         const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
         if (profile) {
           const basePoints = Number(stat.points) || 0;
-          const addedPointsFromStats = Number(stat.total_points) || 0; // Ini adalah 'bonus' di rankings
+          const addedPointsFromStats = Number(stat.total_points) || 0; 
 
           let normalizedSeed = stat.seed || 'Non-Seed';
           if (!normalizedSeed.includes('Seed') && normalizedSeed !== 'Non-Seed') {
@@ -100,7 +100,7 @@ export default function AdminRanking() {
             seed: normalizedSeed,
             photo_url: profile.foto_url || null,
             poin: basePoints,
-            bonus: addedPointsFromStats, 
+            bonus: addedPointsFromStats, // SINKRONISASI: bonus (UI) = atlet_stats.total_points
             total_points: basePoints + addedPointsFromStats,
             updated_at: new Date().toISOString(),
           };
@@ -109,7 +109,7 @@ export default function AdminRanking() {
       }).filter(Boolean);
 
       if (finalDataArray.length > 0) {
-        // Upsert menggunakan pendaftaran_id sebagai acuan agar tidak duplikat
+        // Upsert ke tabel rankings
         const { error: upsertError } = await supabase
           .from('rankings')
           .upsert(finalDataArray, { onConflict: 'player_name' });
@@ -147,7 +147,7 @@ export default function AdminRanking() {
     fetchRankings();
 
     const channel = supabase
-      .channel('realtime_rankings')
+      .channel('realtime_rankings_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'atlet_stats' }, () => {
         autoSyncData().then(() => {
           supabase.from('rankings').select('*').order('total_points', { ascending: false })
@@ -161,7 +161,7 @@ export default function AdminRanking() {
     };
   }, [fetchRankings, autoSyncData]);
 
-  // --- HANDLERS (PERBAIKAN LOGIKA SIMPAN) ---
+  // --- HANDLERS (SINKRONISASI DUA ARAH) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -171,7 +171,7 @@ export default function AdminRanking() {
       
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
-      const bonus = Number(formData.bonus) || 0; // Added Points
+      const bonus = Number(formData.bonus) || 0; 
       const calculatedTotal = base + bonus;
       
       const payload = {
@@ -186,26 +186,37 @@ export default function AdminRanking() {
         pendaftaran_id: formData.pendaftaran_id 
       };
 
-      // 1. Update/Upsert Tabel Rankings
+      // 1. Update Tabel Rankings
       const { error: rankError } = editingId 
         ? await supabase.from('rankings').update(payload).eq('id', editingId)
         : await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
 
       if (rankError) throw rankError;
 
-      // 2. Sinkronisasi balik ke Tabel atlet_stats
-      if (formData.pendaftaran_id) {
+      // 2. Sinkronisasi ke tabel atlet_stats berdasarkan pendaftaran_id
+      // Cari pendaftaran_id jika belum ada (berguna untuk data manual)
+      let targetPendaftaranId = formData.pendaftaran_id;
+      if (!targetPendaftaranId) {
+        const { data: pendaftaran } = await supabase
+          .from('pendaftaran')
+          .select('id')
+          .ilike('nama', cleanName)
+          .single();
+        targetPendaftaranId = pendaftaran?.id;
+      }
+
+      if (targetPendaftaranId) {
         let dbSeed = formData.seed?.replace('Seed ', '') || 'Non-Seed';
         
         const { error: statsUpdateError } = await supabase
           .from('atlet_stats')
           .update({
             points: base,
-            total_points: bonus, // SINKRON: bonus di UI = total_points di atlet_stats
+            total_points: bonus, // Sync: Added Points (Ranking) -> total_points (atlet_stats)
             seed: dbSeed,
             updated_at: new Date().toISOString()
           })
-          .eq('pendaftaran_id', formData.pendaftaran_id);
+          .eq('pendaftaran_id', targetPendaftaranId);
 
         if (statsUpdateError) throw statsUpdateError;
       }
@@ -222,7 +233,6 @@ export default function AdminRanking() {
     }
   };
 
-  // --- LOGIKA FILTER & EXPORT ---
   const filteredRankings = rankings.filter((r) => {
     const matchSearch = (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchSeed = selectedSeed === 'Semua' || r.seed === selectedSeed;
@@ -287,7 +297,7 @@ export default function AdminRanking() {
               MANAJEMEN<span className="text-blue-600"> RANKING</span>
             </h1>
             <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest mt-2">
-              Sistem Sinkronisasi Total Points & Added Points Real-Time
+              Sistem Sinkronisasi Added Points (Stats) & Base Points Terintegrasi
             </p>
           </div>
 
