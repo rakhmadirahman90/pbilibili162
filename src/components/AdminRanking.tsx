@@ -18,7 +18,7 @@ import {
   Download,
   FileText,
   Table as TableIcon
-} from 'lucide-react'; // Pastikan lucide-react, saya asumsikan penulisan standar lucide-react
+} from 'lucide-react';
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -113,15 +113,17 @@ export default function AdminRanking() {
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
 
-  // --- LOGIKA SINKRONISASI DATA (SINKRON DENGAN KATEGORI SEED BARU) ---
+  // --- PERBAIKAN LOGIKA SINKRONISASI DATA ---
   const autoSyncData = useCallback(async () => {
     try {
+      // 1. Ambil data stats terbaru (Poin Tambahan/Added Points ada di kolom 'total_points' pada tabel atlet_stats)
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
 
       if (statsError) throw statsError;
 
+      // 2. Ambil profil pendaftaran
       const { data: pendaftaranData, error: pendaftaranError } = await supabase
         .from('pendaftaran')
         .select('id, nama, foto_url, kategori_atlet');
@@ -132,10 +134,11 @@ export default function AdminRanking() {
         .map((stat) => {
           const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
           if (profile) {
+            // poin = Base Points (statis/dari pendaftaran)
+            // bonus = Added Points (dari manajemen poin/atlet_stats.total_points)
             const base = Number(stat.points) || 0;
             const added = Number(stat.total_points) || 0;
 
-            // Normalisasi Seed agar sinkron antara 'A' dan 'Seed A' dsb.
             let normalizedSeed = stat.seed || 'Non-Seed';
             if (normalizedSeed === 'A') normalizedSeed = 'Seed A';
             if (normalizedSeed === 'B+') normalizedSeed = 'Seed B+';
@@ -159,7 +162,12 @@ export default function AdminRanking() {
         .filter(Boolean);
 
       if (finalDataArray.length > 0) {
-        await supabase.from('rankings').upsert(finalDataArray, { onConflict: 'player_name' });
+        // Upsert ke tabel rankings
+        const { error: upsertError } = await supabase
+          .from('rankings')
+          .upsert(finalDataArray, { onConflict: 'player_name' });
+        
+        if (upsertError) throw upsertError;
         return true;
       }
       return false;
@@ -172,7 +180,10 @@ export default function AdminRanking() {
   const fetchRankings = useCallback(async () => {
     setLoading(true);
     try {
+      // Jalankan sinkronisasi dulu
       await autoSyncData();
+      
+      // Ambil data dari tabel rankings yang sudah ter-update
       const { data, error } = await supabase
         .from('rankings')
         .select('*')
@@ -181,7 +192,7 @@ export default function AdminRanking() {
       if (error) throw error;
       setRankings(data || []);
     } catch (err: any) {
-      setFormError('Gagal mengambil data: ' + err.message);
+      setFormError('Gagal sinkronisasi: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -254,7 +265,7 @@ export default function AdminRanking() {
       setIsModalOpen(false);
       setEditingId(null);
       setSuccessMsg('Data ranking berhasil diperbarui!');
-      fetchRankings();
+      fetchRankings(); // Memicu fetch ulang untuk sinkronisasi tampilan
     } catch (err: any) {
       setFormError(err.message);
     } finally {
@@ -328,7 +339,6 @@ export default function AdminRanking() {
           </div>
         </div>
 
-        {/* Filter Section - FIXED & SYNCED */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -363,7 +373,6 @@ export default function AdminRanking() {
           </select>
         </div>
 
-        {/* Table Content */}
         <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
           <table className="w-full text-left min-w-[1000px]">
             <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
@@ -382,7 +391,7 @@ export default function AdminRanking() {
               {loading ? (
                 <tr>
                   <td colSpan={8} className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse">
-                    Mengambil Data Ranking Atlet...
+                    Mensinkronisasi Data Poin Terbaru...
                   </td>
                 </tr>
               ) : paginatedRankings.length > 0 ? (
@@ -455,7 +464,6 @@ export default function AdminRanking() {
           </table>
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex justify-between items-center mt-8 px-2">
             <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
@@ -481,7 +489,6 @@ export default function AdminRanking() {
         )}
       </div>
 
-      {/* MODAL FORM - FIXED SINKRONISASI SEED */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
