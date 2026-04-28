@@ -30,9 +30,9 @@ interface Ranking {
   player_name: string;
   category: string;
   seed: string;
-  total_points: number; // Hasil akhir: poin + bonus
-  bonus: number;        // Nilai yang diambil dari atlet_stats.total_points
-  poin: number;         // Nilai yang diambil dari atlet_stats.points
+  total_points: number; // Final Result (poin + bonus)
+  bonus: number;        // From atlet_stats.total_points
+  poin: number;         // From atlet_stats.points
   photo_url?: string;
   updated_at?: string;
 }
@@ -64,26 +64,29 @@ export default function AdminRanking() {
     photo_url: '',
   });
 
-  // --- LOGIKA SINKRONISASI DATA UTAMA ---
+  // --- LOGIKA SINKRONISASI DATA UTAMA (PERBAIKAN SINKRONISASI) ---
   const autoSyncData = useCallback(async () => {
     try {
+      // Ambil data stats terbaru
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
 
       if (statsError) throw statsError;
 
+      // Ambil data profil terbaru
       const { data: pendaftaranData, error: pendaftaranError } = await supabase
         .from('pendaftaran')
         .select('id, nama, foto_url, kategori_atlet');
 
       if (pendaftaranError) throw pendaftaranError;
 
+      // Mapping data dengan logika Added Points (bonus) = atlet_stats.total_points
       const finalDataArray = (statsData || []).map((stat) => {
         const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
         if (profile) {
           const basePoints = Number(stat.points) || 0;
-          const bonusPoints = Number(stat.total_points) || 0; 
+          const addedPointsFromStats = Number(stat.total_points) || 0; // Ini adalah 'bonus' di rankings
 
           let normalizedSeed = stat.seed || 'Non-Seed';
           if (!normalizedSeed.includes('Seed') && normalizedSeed !== 'Non-Seed') {
@@ -97,8 +100,8 @@ export default function AdminRanking() {
             seed: normalizedSeed,
             photo_url: profile.foto_url || null,
             poin: basePoints,
-            bonus: bonusPoints,
-            total_points: basePoints + bonusPoints, // Logika Penjumlahan Akurat
+            bonus: addedPointsFromStats, 
+            total_points: basePoints + addedPointsFromStats,
             updated_at: new Date().toISOString(),
           };
         }
@@ -106,6 +109,7 @@ export default function AdminRanking() {
       }).filter(Boolean);
 
       if (finalDataArray.length > 0) {
+        // Upsert menggunakan pendaftaran_id sebagai acuan agar tidak duplikat
         const { error: upsertError } = await supabase
           .from('rankings')
           .upsert(finalDataArray, { onConflict: 'player_name' });
@@ -142,12 +146,10 @@ export default function AdminRanking() {
   useEffect(() => {
     fetchRankings();
 
-    // Subscribe ke perubahan di tabel atlet_stats
     const channel = supabase
       .channel('realtime_rankings')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'atlet_stats' }, () => {
         autoSyncData().then(() => {
-          // Fetch ulang data setelah sinkronisasi otomatis selesai
           supabase.from('rankings').select('*').order('total_points', { ascending: false })
             .then(({ data }) => data && setRankings(data));
         });
@@ -159,7 +161,7 @@ export default function AdminRanking() {
     };
   }, [fetchRankings, autoSyncData]);
 
-  // --- HANDLERS ---
+  // --- HANDLERS (PERBAIKAN LOGIKA SIMPAN) ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -169,8 +171,8 @@ export default function AdminRanking() {
       
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
-      const bonus = Number(formData.bonus) || 0;
-      const calculatedTotal = base + bonus; // Pastikan penjumlahan benar
+      const bonus = Number(formData.bonus) || 0; // Added Points
+      const calculatedTotal = base + bonus;
       
       const payload = {
         player_name: cleanName,
@@ -184,14 +186,14 @@ export default function AdminRanking() {
         pendaftaran_id: formData.pendaftaran_id 
       };
 
-      // 1. Update Tabel Rankings
+      // 1. Update/Upsert Tabel Rankings
       const { error: rankError } = editingId 
         ? await supabase.from('rankings').update(payload).eq('id', editingId)
         : await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
 
       if (rankError) throw rankError;
 
-      // 2. Sinkronisasi ke Tabel atlet_stats (PENTING)
+      // 2. Sinkronisasi balik ke Tabel atlet_stats
       if (formData.pendaftaran_id) {
         let dbSeed = formData.seed?.replace('Seed ', '') || 'Non-Seed';
         
@@ -199,7 +201,7 @@ export default function AdminRanking() {
           .from('atlet_stats')
           .update({
             points: base,
-            total_points: bonus, // Sinkronisasi: bonus di rankings = total_points di atlet_stats
+            total_points: bonus, // SINKRON: bonus di UI = total_points di atlet_stats
             seed: dbSeed,
             updated_at: new Date().toISOString()
           })
@@ -211,6 +213,7 @@ export default function AdminRanking() {
       setIsModalOpen(false);
       setEditingId(null);
       setSuccessMsg('Data Berhasil Disinkronkan!');
+      setTimeout(() => setSuccessMsg(null), 3000);
       await fetchRankings(); 
     } catch (err: any) {
       setFormError(err.message);
@@ -234,8 +237,8 @@ export default function AdminRanking() {
       Kategori: r.category,
       Seed: r.seed,
       "Base Points": r.poin,
-      "Added Points (Bonus)": r.bonus,
-      "Total Ranking Points": r.poin + r.bonus
+      "Added Points (Stats)": r.bonus,
+      "Total Ranking Points": r.total_points
     }));
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = { Sheets: { data: ws }, SheetNames: ["RankingData"] };
@@ -247,8 +250,8 @@ export default function AdminRanking() {
     const doc = new jsPDF() as any;
     doc.text("RANKING PB BILIBILI 162", 14, 15);
     doc.autoTable({
-      head: [["Rank", "Nama", "Kat", "Seed", "Base", "Bonus", "Total"]],
-      body: filteredRankings.map((r, idx) => [idx + 1, r.player_name, r.category, r.seed, r.poin, r.bonus, r.poin + r.bonus]),
+      head: [["Rank", "Nama", "Kat", "Seed", "Base", "Added", "Total"]],
+      body: filteredRankings.map((r, idx) => [idx + 1, r.player_name, r.category, r.seed, r.poin, r.bonus, r.total_points]),
       startY: 22,
       theme: 'grid'
     });
@@ -260,11 +263,11 @@ export default function AdminRanking() {
     try {
       await supabase.from('rankings').delete().eq('id', id);
       setSuccessMsg('Atlet dihapus');
+      setTimeout(() => setSuccessMsg(null), 2000);
       fetchRankings();
     } catch (err: any) { alert(err.message); }
   };
 
-  // Pagination Logic
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedRankings = filteredRankings.slice(startIndex, startIndex + itemsPerPage);
 
@@ -402,7 +405,6 @@ export default function AdminRanking() {
             </div>
             
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
-              {/* Profile Photo Upload */}
               <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-3xl">
                 <div className="w-20 h-20 bg-zinc-900 rounded-2xl overflow-hidden flex items-center justify-center">
                   {formData.photo_url ? <img src={formData.photo_url} className="w-full h-full object-cover" /> : <Camera className="text-zinc-700" />}
