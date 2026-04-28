@@ -18,7 +18,7 @@ import {
   Download,
   FileText,
   Table as TableIcon
-} from 'lucide-react';
+} from 'lucide-react'; // Perbaikan typo dari lucide-center ke lucide-react jika diperlukan
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -30,9 +30,9 @@ interface Ranking {
   player_name: string;
   category: string;
   seed: string;
-  total_points: number; // Ini adalah Added Points dari DB
-  bonus: number;        // (Opsional/Legacy)
-  poin: number;         // Ini adalah Base Points dari DB
+  total_points: number; // Ini sekarang akan menyimpan nilai dari 'total_points' di tabel atlet_stats
+  bonus: number;
+  poin: number; // Base Points
   photo_url?: string;
   updated_at?: string;
 }
@@ -58,8 +58,9 @@ export default function AdminRanking() {
     player_name: '',
     category: 'SENIOR',
     seed: 'Seed A',
-    total_points: 0, // Bertindak sebagai Added Points
-    poin: 0,         // Bertindak sebagai Base Points
+    total_points: 0,
+    bonus: 0,
+    poin: 0,
     photo_url: '',
   });
 
@@ -73,8 +74,8 @@ export default function AdminRanking() {
       Kategori: r.category,
       Seed: r.seed,
       "Base Points": r.poin,
-      "Added Points": r.total_points,
-      "Total Score": (Number(r.poin) || 0) + (Number(r.total_points) || 0)
+      "Stats Points": r.total_points,
+      "Total Ranking": r.poin + r.total_points // Kalkulasi total untuk laporan
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -89,7 +90,7 @@ export default function AdminRanking() {
     doc.setFontSize(16);
     doc.text("DATA RANKING ATLET PB BILIBILI 162", 14, 15);
     
-    const tableColumn = ["Rank", "Nama Atlet", "Kategori", "Seed", "Base", "Added", "Total"];
+    const tableColumn = ["Rank", "Nama Atlet", "Kategori", "Seed", "Base", "Stats", "Total"];
     const tableRows = filteredRankings.map((r, idx) => [
       idx + 1,
       r.player_name,
@@ -97,7 +98,7 @@ export default function AdminRanking() {
       r.seed,
       r.poin,
       r.total_points,
-      (Number(r.poin) || 0) + (Number(r.total_points) || 0)
+      r.poin + r.total_points
     ]);
 
     doc.autoTable({
@@ -107,7 +108,7 @@ export default function AdminRanking() {
       theme: 'grid',
       headStyles: { fillColor: [37, 99, 235], fontSize: 10, halign: 'center' },
       styles: { fontSize: 9 },
-      columnStyles: { 0: { halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'center', fontStyle: 'bold' } }
+      columnStyles: { 0: { halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'center' } }
     });
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
@@ -115,31 +116,34 @@ export default function AdminRanking() {
   // --- LOGIKA SINKRONISASI DATA UTAMA ---
   const autoSyncData = useCallback(async () => {
     try {
+      // 1. Ambil data stats terbaru (total_points di tabel atlet_stats)
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
 
       if (statsError) throw statsError;
 
+      // 2. Ambil profil pendaftaran
       const { data: pendaftaranData, error: pendaftaranError } = await supabase
         .from('pendaftaran')
         .select('id, nama, foto_url, kategori_atlet');
 
       if (pendaftaranError) throw pendaftaranError;
 
+      // 3. Mapping data sinkron
       const finalDataArray = (statsData || [])
         .map((stat) => {
           const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
           if (profile) {
-            const base = Number(stat.points) || 0;
-            const added = Number(stat.total_points) || 0; 
+            const basePoin = Number(stat.points) || 0;
+            const statsPoints = Number(stat.total_points) || 0;
 
             let normalizedSeed = stat.seed || 'Non-Seed';
             if (!normalizedSeed.includes('Seed')) {
-                if (normalizedSeed === 'A') normalizedSeed = 'Seed A';
-                else if (normalizedSeed === 'B+') normalizedSeed = 'Seed B+';
-                else if (normalizedSeed === 'B-') normalizedSeed = 'Seed B-';
-                else if (normalizedSeed === 'C') normalizedSeed = 'Seed C';
+              if (normalizedSeed === 'A') normalizedSeed = 'Seed A';
+              else if (normalizedSeed === 'B+') normalizedSeed = 'Seed B+';
+              else if (normalizedSeed === 'B-') normalizedSeed = 'Seed B-';
+              else if (normalizedSeed === 'C') normalizedSeed = 'Seed C';
             }
 
             return {
@@ -148,8 +152,8 @@ export default function AdminRanking() {
               category: profile.kategori_atlet || 'SENIOR',
               seed: normalizedSeed,
               photo_url: profile.foto_url || null,
-              poin: base,           // Mapping ke kolom poin (Base)
-              total_points: added,  // Mapping ke kolom total_points (Added)
+              poin: basePoin, // Mengambil kolom 'points' sebagai Base
+              total_points: statsPoints, // Mengambil kolom 'total_points' dari atlet_stats
               updated_at: new Date().toISOString(),
             };
           }
@@ -183,12 +187,10 @@ export default function AdminRanking() {
 
       if (error) throw error;
 
-      // Sort manual berdasarkan penjumlahan (Base + Added)
-      const sortedData = (data || []).sort((a, b) => {
-        const totalA = (Number(a.poin) || 0) + (Number(a.total_points) || 0);
-        const totalB = (Number(b.poin) || 0) + (Number(b.total_points) || 0);
-        return totalB - totalA;
-      });
+      // Sorting manual berdasarkan penjumlahan (poin + total_points) secara descending
+      const sortedData = (data || []).sort((a, b) => 
+        ((b.poin || 0) + (b.total_points || 0)) - ((a.poin || 0) + (a.total_points || 0))
+      );
 
       setRankings(sortedData);
     } catch (err: any) {
@@ -239,14 +241,14 @@ export default function AdminRanking() {
       
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
-      const added = Number(formData.total_points) || 0;
+      const statsPoints = Number(formData.total_points) || 0;
       
       const payload = {
         player_name: cleanName,
         category: formData.category,
         seed: formData.seed,
         poin: base,
-        total_points: added,
+        total_points: statsPoints,
         photo_url: formData.photo_url || null,
         updated_at: new Date().toISOString(),
         pendaftaran_id: formData.pendaftaran_id 
@@ -265,7 +267,7 @@ export default function AdminRanking() {
           .from('atlet_stats')
           .update({
             points: base,
-            total_points: added, 
+            total_points: statsPoints, 
             seed: dbSeed,
             updated_at: new Date().toISOString()
           })
@@ -297,6 +299,7 @@ export default function AdminRanking() {
     }
   };
 
+  // --- LOGIKA FILTER & PAGINATION ---
   const filteredRankings = rankings.filter((r) => {
     const matchSearch = (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchSeed = selectedSeed === 'Semua' || r.seed === selectedSeed;
@@ -392,8 +395,8 @@ export default function AdminRanking() {
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Profil Atlet</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Kategori</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Seeded</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Base Points</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Added Points</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Base Poin</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Stats Poin</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center">Total Ranking</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest text-right">Aksi</th>
               </tr>
@@ -441,11 +444,11 @@ export default function AdminRanking() {
                       <span className="text-zinc-400 font-bold text-xs">{(item.poin || 0).toLocaleString()}</span>
                     </td>
                     <td className="p-5">
-                      <span className="text-emerald-500 font-bold text-xs">+{ (item.total_points || 0).toLocaleString()}</span>
+                      <span className="text-emerald-500 font-bold text-xs">{(item.total_points || 0).toLocaleString()}</span>
                     </td>
                     <td className="p-5 text-center">
                       <span className="text-xl font-black text-white group-hover:text-blue-500 transition-colors">
-                        {((Number(item.poin) || 0) + (Number(item.total_points) || 0)).toLocaleString()}
+                        {((item.poin || 0) + (item.total_points || 0)).toLocaleString()}
                       </span>
                     </td>
                     <td className="p-5 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
@@ -569,7 +572,7 @@ export default function AdminRanking() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-zinc-500 uppercase">Base Points</label>
+                  <label className="text-[10px] font-black text-zinc-500 uppercase">Base Poin</label>
                   <input
                     type="number"
                     className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none text-white font-bold"
@@ -578,7 +581,7 @@ export default function AdminRanking() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-emerald-500 uppercase">Added Points (Stats)</label>
+                  <label className="text-[10px] font-black text-emerald-500 uppercase">Stats Poin (Accumulated)</label>
                   <input
                     type="number"
                     className="w-full bg-zinc-900 border border-emerald-500/20 rounded-2xl p-4 outline-none font-bold text-emerald-500"
@@ -590,8 +593,8 @@ export default function AdminRanking() {
 
               <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-600/20 flex justify-between items-center shadow-lg shadow-blue-600/5">
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-black uppercase text-blue-400 italic leading-none">Total Ranking Score</span>
-                  <span className="text-[9px] text-zinc-500 uppercase mt-1">Base + Added Points</span>
+                  <span className="text-[10px] font-black uppercase text-blue-400 italic leading-none">Total Ranking Akumulasi</span>
+                  <span className="text-[9px] text-zinc-500 uppercase mt-1">Base Poin + Stats Poin</span>
                 </div>
                 <span className="text-3xl font-black text-white">
                   {((Number(formData.poin) || 0) + (Number(formData.total_points) || 0)).toLocaleString()}
