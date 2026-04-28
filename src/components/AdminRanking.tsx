@@ -18,7 +18,7 @@ import {
   Download,
   FileText,
   Table as TableIcon
-} from 'lucide-react';
+} from 'lucide-center';
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -113,33 +113,38 @@ export default function AdminRanking() {
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
 
-  // --- LOGIKA SINKRONISASI DATA (Sesuai Gambar: Added Points berasal dari atlet_stats.total_points) ---
+  // --- LOGIKA SINKRONISASI DATA UTAMA ---
   const autoSyncData = useCallback(async () => {
     try {
+      // 1. Ambil data stats terbaru (Added Points = total_points di tabel atlet_stats)
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
 
       if (statsError) throw statsError;
 
+      // 2. Ambil profil pendaftaran untuk data kategori dan foto
       const { data: pendaftaranData, error: pendaftaranError } = await supabase
         .from('pendaftaran')
         .select('id, nama, foto_url, kategori_atlet');
 
       if (pendaftaranError) throw pendaftaranError;
 
+      // 3. Mapping data untuk memastikan tabel Rankings sinkron dengan Manajemen Poin
       const finalDataArray = (statsData || [])
         .map((stat) => {
           const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
           if (profile) {
             const base = Number(stat.points) || 0;
-            const added = Number(stat.total_points) || 0;
+            const added = Number(stat.total_points) || 0; // "total_points" di atlet_stats adalah "Added Points" di UI
 
             let normalizedSeed = stat.seed || 'Non-Seed';
-            if (normalizedSeed === 'A') normalizedSeed = 'Seed A';
-            if (normalizedSeed === 'B+') normalizedSeed = 'Seed B+';
-            if (normalizedSeed === 'B' || normalizedSeed === 'B-') normalizedSeed = 'Seed B-';
-            if (normalizedSeed === 'C') normalizedSeed = 'Seed C';
+            if (!normalizedSeed.includes('Seed')) {
+                if (normalizedSeed === 'A') normalizedSeed = 'Seed A';
+                else if (normalizedSeed === 'B+') normalizedSeed = 'Seed B+';
+                else if (normalizedSeed === 'B-') normalizedSeed = 'Seed B-';
+                else if (normalizedSeed === 'C') normalizedSeed = 'Seed C';
+            }
 
             return {
               pendaftaran_id: profile.id,
@@ -158,6 +163,7 @@ export default function AdminRanking() {
         .filter(Boolean);
 
       if (finalDataArray.length > 0) {
+        // Update tabel rankings secara massal
         const { error: upsertError } = await supabase
           .from('rankings')
           .upsert(finalDataArray, { onConflict: 'player_name' });
@@ -175,7 +181,9 @@ export default function AdminRanking() {
   const fetchRankings = useCallback(async () => {
     setLoading(true);
     try {
+      // Jalankan sinkronisasi sebelum fetch data tampilan
       await autoSyncData();
+      
       const { data, error } = await supabase
         .from('rankings')
         .select('*')
@@ -184,7 +192,7 @@ export default function AdminRanking() {
       if (error) throw error;
       setRankings(data || []);
     } catch (err: any) {
-      setFormError('Gagal sinkronisasi: ' + err.message);
+      setFormError('Gagal memuat data: ' + err.message);
     } finally {
       setLoading(false);
     }
@@ -245,38 +253,34 @@ export default function AdminRanking() {
         pendaftaran_id: formData.pendaftaran_id 
       };
 
-      // 1. Update/Upsert ke tabel Rankings
-      let error;
+      // 1. Update ke tabel Rankings
       if (editingId) {
-        const { error: updateError } = await supabase.from('rankings').update(payload).eq('id', editingId);
-        error = updateError;
+        await supabase.from('rankings').update(payload).eq('id', editingId);
       } else {
-        const { error: upsertError } = await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
-        error = upsertError;
+        await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
       }
-      if (error) throw error;
 
-      // 2. PERBAIKAN KRUSIAL: Sinkronisasi balik ke atlet_stats (Manajemen Poin)
-      // Hal ini memastikan data di "Manajemen Poin" selalu sama dengan "Manajemen Ranking"
+      // 2. SINKRONISASI INSTAN: Update tabel atlet_stats agar Manajemen Poin berubah otomatis
       if (formData.pendaftaran_id) {
-        // Konversi Seed kembali ke format database atlet_stats (A, B+, dll)
         let dbSeed = formData.seed?.replace('Seed ', '') || 'Non-Seed';
         
-        await supabase
+        const { error: statsUpdateError } = await supabase
           .from('atlet_stats')
           .update({
             points: base,
-            total_points: added, // Sesuai logika: Added Points disimpan di kolom total_points pada atlet_stats
+            total_points: added, // Sesuai logika manajemen poin PB Bilibili 162
             seed: dbSeed,
             updated_at: new Date().toISOString()
           })
           .eq('pendaftaran_id', formData.pendaftaran_id);
+
+        if (statsUpdateError) throw statsUpdateError;
       }
       
       setIsModalOpen(false);
       setEditingId(null);
-      setSuccessMsg('Data ranking & stats berhasil disinkronkan!');
-      fetchRankings();
+      setSuccessMsg('Data ranking berhasil diperbarui secara sistemik!');
+      await fetchRankings(); // Refresh total data
     } catch (err: any) {
       setFormError(err.message);
     } finally {
@@ -321,6 +325,7 @@ export default function AdminRanking() {
           </div>
         )}
 
+        {/* HEADER SECTION */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
           <div>
             <h1 className="text-5xl font-black italic tracking-tighter uppercase leading-none">
@@ -350,6 +355,7 @@ export default function AdminRanking() {
           </div>
         </div>
 
+        {/* FILTER BAR */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -384,6 +390,7 @@ export default function AdminRanking() {
           </select>
         </div>
 
+        {/* TABLE SECTION */}
         <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
           <table className="w-full text-left min-w-[1000px]">
             <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
@@ -402,7 +409,7 @@ export default function AdminRanking() {
               {loading ? (
                 <tr>
                   <td colSpan={8} className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse">
-                    Mensinkronisasi Data Poin Terbaru...
+                    Mensinkronisasi Data Poin & Stats Terbaru...
                   </td>
                 </tr>
               ) : paginatedRankings.length > 0 ? (
@@ -475,6 +482,7 @@ export default function AdminRanking() {
           </table>
         </div>
 
+        {/* PAGINATION */}
         {totalPages > 1 && (
           <div className="flex justify-between items-center mt-8 px-2">
             <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
@@ -500,6 +508,7 @@ export default function AdminRanking() {
         )}
       </div>
 
+      {/* MODAL FORM */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -534,7 +543,7 @@ export default function AdminRanking() {
                   <label className="text-[10px] font-black text-zinc-500 uppercase">Nama Lengkap Atlet</label>
                   <input
                     required
-                    placeholder="CONTOH: AHMAD SUBARDJO"
+                    placeholder="NAMA ATLET..."
                     className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 outline-none focus:border-blue-600 font-black uppercase text-sm text-white"
                     value={formData.player_name}
                     onChange={(e) => setFormData({ ...formData, player_name: e.target.value })}
