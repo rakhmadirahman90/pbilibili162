@@ -31,8 +31,8 @@ interface Ranking {
   category: string;
   seed: string;
   total_points: number; // Final Result (poin + bonus)
-  bonus: number;        // From atlet_stats.total_points
-  poin: number;         // From atlet_stats.points
+  bonus: number;        // Dari atlet_stats.total_points
+  poin: number;         // Dari atlet_stats.points
   photo_url?: string;
   updated_at?: string;
 }
@@ -51,6 +51,7 @@ export default function AdminRanking() {
   const [formError, setFormError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -64,29 +65,26 @@ export default function AdminRanking() {
     photo_url: '',
   });
 
-  // --- LOGIKA SINKRONISASI DATA UTAMA (FIXED: Added Points = atlet_stats.total_points) ---
+  // --- LOGIKA SINKRONISASI DATA ---
   const autoSyncData = useCallback(async () => {
     try {
-      // 1. Tarik data stats terbaru
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
 
       if (statsError) throw statsError;
 
-      // 2. Tarik data profil terbaru
       const { data: pendaftaranData, error: pendaftaranError } = await supabase
         .from('pendaftaran')
         .select('id, nama, foto_url, kategori_atlet');
 
       if (pendaftaranError) throw pendaftaranError;
 
-      // 3. Mapping data: Memastikan bonus di tabel rankings mengambil nilai total_points dari atlet_stats
       const finalDataArray = (statsData || []).map((stat) => {
         const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
         if (profile) {
           const basePoints = Number(stat.points) || 0;
-          const addedPointsFromStats = Number(stat.total_points) || 0; 
+          const addedPointsFromStats = Number(stat.total_points) || 0;
 
           let normalizedSeed = stat.seed || 'Non-Seed';
           if (!normalizedSeed.includes('Seed') && normalizedSeed !== 'Non-Seed') {
@@ -100,7 +98,7 @@ export default function AdminRanking() {
             seed: normalizedSeed,
             photo_url: profile.foto_url || null,
             poin: basePoints,
-            bonus: addedPointsFromStats, // SINKRONISASI: bonus (UI) = atlet_stats.total_points
+            bonus: addedPointsFromStats, 
             total_points: basePoints + addedPointsFromStats,
             updated_at: new Date().toISOString(),
           };
@@ -109,7 +107,6 @@ export default function AdminRanking() {
       }).filter(Boolean);
 
       if (finalDataArray.length > 0) {
-        // Upsert ke tabel rankings
         const { error: upsertError } = await supabase
           .from('rankings')
           .upsert(finalDataArray, { onConflict: 'player_name' });
@@ -142,26 +139,21 @@ export default function AdminRanking() {
     }
   }, [autoSyncData]);
 
-  // --- SINKRONISASI REAL-TIME ---
   useEffect(() => {
     fetchRankings();
-
     const channel = supabase
-      .channel('realtime_rankings_sync')
+      .channel('realtime_rankings')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'atlet_stats' }, () => {
-        autoSyncData().then(() => {
-          supabase.from('rankings').select('*').order('total_points', { ascending: false })
-            .then(({ data }) => data && setRankings(data));
-        });
+        fetchRankings();
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchRankings, autoSyncData]);
+  }, [fetchRankings]);
 
-  // --- HANDLERS (SINKRONISASI DUA ARAH) ---
+  // --- HANDLERS ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -171,7 +163,7 @@ export default function AdminRanking() {
       
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
-      const bonus = Number(formData.bonus) || 0; 
+      const bonus = Number(formData.bonus) || 0;
       const calculatedTotal = base + bonus;
       
       const payload = {
@@ -186,46 +178,30 @@ export default function AdminRanking() {
         pendaftaran_id: formData.pendaftaran_id 
       };
 
-      // 1. Update Tabel Rankings
       const { error: rankError } = editingId 
         ? await supabase.from('rankings').update(payload).eq('id', editingId)
         : await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
 
       if (rankError) throw rankError;
 
-      // 2. Sinkronisasi ke tabel atlet_stats berdasarkan pendaftaran_id
-      // Cari pendaftaran_id jika belum ada (berguna untuk data manual)
-      let targetPendaftaranId = formData.pendaftaran_id;
-      if (!targetPendaftaranId) {
-        const { data: pendaftaran } = await supabase
-          .from('pendaftaran')
-          .select('id')
-          .ilike('nama', cleanName)
-          .single();
-        targetPendaftaranId = pendaftaran?.id;
-      }
-
-      if (targetPendaftaranId) {
+      if (formData.pendaftaran_id) {
         let dbSeed = formData.seed?.replace('Seed ', '') || 'Non-Seed';
-        
-        const { error: statsUpdateError } = await supabase
+        await supabase
           .from('atlet_stats')
           .update({
             points: base,
-            total_points: bonus, // Sync: Added Points (Ranking) -> total_points (atlet_stats)
+            total_points: bonus,
             seed: dbSeed,
             updated_at: new Date().toISOString()
           })
-          .eq('pendaftaran_id', targetPendaftaranId);
-
-        if (statsUpdateError) throw statsUpdateError;
+          .eq('pendaftaran_id', formData.pendaftaran_id);
       }
       
       setIsModalOpen(false);
       setEditingId(null);
       setSuccessMsg('Data Berhasil Disinkronkan!');
       setTimeout(() => setSuccessMsg(null), 3000);
-      await fetchRankings(); 
+      fetchRankings(); 
     } catch (err: any) {
       setFormError(err.message);
     } finally {
@@ -233,12 +209,21 @@ export default function AdminRanking() {
     }
   };
 
+  // --- LOGIKA FILTER & PAGINATION ---
   const filteredRankings = rankings.filter((r) => {
     const matchSearch = (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchSeed = selectedSeed === 'Semua' || r.seed === selectedSeed;
     const matchCategory = selectedCategory === 'Semua' || r.category === selectedCategory;
     return matchSearch && matchSeed && matchCategory;
   });
+
+  const totalPages = Math.ceil(filteredRankings.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedRankings = filteredRankings.slice(startIndex, startIndex + itemsPerPage);
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) setCurrentPage(page);
+  };
 
   const exportToExcel = () => {
     const exportData = filteredRankings.map((r, idx) => ({
@@ -278,9 +263,6 @@ export default function AdminRanking() {
     } catch (err: any) { alert(err.message); }
   };
 
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedRankings = filteredRankings.slice(startIndex, startIndex + itemsPerPage);
-
   return (
     <div className="min-h-screen bg-[#050505] text-white p-4 md:p-12 font-sans">
       <div className="max-w-7xl mx-auto">
@@ -297,7 +279,7 @@ export default function AdminRanking() {
               MANAJEMEN<span className="text-blue-600"> RANKING</span>
             </h1>
             <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest mt-2">
-              Sistem Sinkronisasi Added Points (Stats) & Base Points Terintegrasi
+              Sistem Sinkronisasi Total Points & Added Points Real-Time
             </p>
           </div>
 
@@ -326,15 +308,15 @@ export default function AdminRanking() {
               placeholder="CARI NAMA ATLET..."
               className="w-full bg-black/40 border border-white/5 rounded-xl py-3 pl-12 pr-4 outline-none text-xs font-bold uppercase"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {setSearchTerm(e.target.value); setCurrentPage(1);}}
             />
           </div>
-          <select className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none uppercase text-zinc-300" value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>
+          <select className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none uppercase text-zinc-300" value={selectedCategory} onChange={(e) => {setSelectedCategory(e.target.value); setCurrentPage(1);}}>
             <option value="Semua">SEMUA KATEGORI</option>
             <option value="MUDA">MUDA</option>
             <option value="SENIOR">SENIOR</option>
           </select>
-          <select className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none uppercase text-zinc-300" value={selectedSeed} onChange={(e) => setSelectedSeed(e.target.value)}>
+          <select className="bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-bold text-xs outline-none uppercase text-zinc-300" value={selectedSeed} onChange={(e) => {setSelectedSeed(e.target.value); setCurrentPage(1);}}>
             <option value="Semua">SEMUA SEED</option>
             <option value="Seed A">Seed A</option>
             <option value="Seed B+">Seed B+</option>
@@ -345,67 +327,103 @@ export default function AdminRanking() {
         </div>
 
         {/* TABLE */}
-        <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
-          <table className="w-full text-left min-w-[1000px]">
-            <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
-              <tr>
-                <th className="p-5 text-[10px] font-black uppercase text-center w-20">Rank</th>
-                <th className="p-5 text-[10px] font-black uppercase">Profil Atlet</th>
-                <th className="p-5 text-[10px] font-black uppercase">Kategori</th>
-                <th className="p-5 text-[10px] font-black uppercase">Seeded</th>
-                <th className="p-5 text-[10px] font-black uppercase">Base Points</th>
-                <th className="p-5 text-[10px] font-black uppercase text-emerald-500">Added Points (Stats)</th>
-                <th className="p-5 text-[10px] font-black uppercase text-center">Total Ranking</th>
-                <th className="p-5 text-[10px] font-black uppercase text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {loading ? (
-                <tr><td colSpan={8} className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse">Syncing...</td></tr>
-              ) : paginatedRankings.length > 0 ? (
-                paginatedRankings.map((item, index) => (
-                  <tr key={item.id} className="hover:bg-white/[0.02] transition-all group">
-                    <td className="p-5 text-center font-black italic text-xl text-zinc-700 group-hover:text-blue-500">
-                      {String(startIndex + index + 1).padStart(2, '0')}
-                    </td>
-                    <td className="p-5">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-zinc-800 rounded-full border border-white/10 overflow-hidden ring-2 ring-blue-600/20">
-                          {item.photo_url ? <img src={item.photo_url} className="w-full h-full object-cover" alt="" /> : <User size={20} className="m-auto mt-3 text-zinc-600" />}
+        <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[1000px]">
+              <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
+                <tr>
+                  <th className="p-5 text-[10px] font-black uppercase text-center w-20">Rank</th>
+                  <th className="p-5 text-[10px] font-black uppercase">Profil Atlet</th>
+                  <th className="p-5 text-[10px] font-black uppercase">Kategori</th>
+                  <th className="p-5 text-[10px] font-black uppercase">Seeded</th>
+                  <th className="p-5 text-[10px] font-black uppercase">Base Points</th>
+                  <th className="p-5 text-[10px] font-black uppercase text-emerald-500">Added Points (Stats)</th>
+                  <th className="p-5 text-[10px] font-black uppercase text-center">Total Ranking</th>
+                  <th className="p-5 text-[10px] font-black uppercase text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {loading ? (
+                  <tr><td colSpan={8} className="p-32 text-center text-xs font-bold uppercase text-zinc-500 animate-pulse">Syncing...</td></tr>
+                ) : paginatedRankings.length > 0 ? (
+                  paginatedRankings.map((item, index) => (
+                    <tr key={item.id} className="hover:bg-white/[0.02] transition-all group">
+                      <td className="p-5 text-center font-black italic text-xl text-zinc-700 group-hover:text-blue-500">
+                        {String(startIndex + index + 1).padStart(2, '0')}
+                      </td>
+                      <td className="p-5">
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-zinc-800 rounded-full border border-white/10 overflow-hidden ring-2 ring-blue-600/20">
+                            {item.photo_url ? <img src={item.photo_url} className="w-full h-full object-cover" alt="" /> : <User size={20} className="m-auto mt-3 text-zinc-600" />}
+                          </div>
+                          <p className="font-black uppercase italic text-sm text-white group-hover:text-blue-400">{item.player_name}</p>
                         </div>
-                        <p className="font-black uppercase italic text-sm text-white group-hover:text-blue-400">{item.player_name}</p>
-                      </div>
-                    </td>
-                    <td className="p-5">
-                      <span className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase ${item.category === 'MUDA' ? 'bg-orange-500/10 text-orange-500' : 'bg-purple-500/10 text-purple-500'}`}>
-                        {item.category}
-                      </span>
-                    </td>
-                    <td className="p-5">
-                      <span className="bg-blue-600/10 border border-blue-600/20 px-3 py-1 rounded-full text-[9px] font-bold text-blue-500 uppercase">{item.seed}</span>
-                    </td>
-                    <td className="p-5 font-bold text-zinc-400 text-xs">{(item.poin || 0).toLocaleString()}</td>
-                    <td className="p-5 font-bold text-emerald-500 text-xs">+{ (item.bonus || 0).toLocaleString()}</td>
-                    <td className="p-5 text-center">
-                      <span className="text-xl font-black text-white group-hover:text-blue-500">
-                        {(item.poin + item.bonus).toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="p-5 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                      <button onClick={() => { setEditingId(item.id); setFormData(item); setIsModalOpen(true); }} className="p-2.5 bg-zinc-900 hover:bg-blue-600 rounded-xl"><Edit3 size={16} /></button>
-                      <button onClick={() => handleDelete(item.id)} className="p-2.5 bg-zinc-900 hover:bg-red-600 rounded-xl"><Trash2 size={16} /></button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr><td colSpan={8} className="p-20 text-center text-zinc-500 uppercase font-bold text-xs italic">Data tidak ditemukan.</td></tr>
-              )}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="p-5">
+                        <span className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase ${item.category === 'MUDA' ? 'bg-orange-500/10 text-orange-500' : 'bg-purple-500/10 text-purple-500'}`}>
+                          {item.category}
+                        </span>
+                      </td>
+                      <td className="p-5">
+                        <span className="bg-blue-600/10 border border-blue-600/20 px-3 py-1 rounded-full text-[9px] font-bold text-blue-500 uppercase">{item.seed}</span>
+                      </td>
+                      <td className="p-5 font-bold text-zinc-400 text-xs">{(item.poin || 0).toLocaleString()}</td>
+                      <td className="p-5 font-bold text-emerald-500 text-xs">+{ (item.bonus || 0).toLocaleString()}</td>
+                      <td className="p-5 text-center">
+                        <span className="text-xl font-black text-white group-hover:text-blue-500">
+                          {(item.poin + item.bonus).toLocaleString()}
+                        </span>
+                      </td>
+                      <td className="p-5 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                        <button onClick={() => { setEditingId(item.id); setFormData(item); setIsModalOpen(true); }} className="p-2.5 bg-zinc-900 hover:bg-blue-600 rounded-xl"><Edit3 size={16} /></button>
+                        <button onClick={() => handleDelete(item.id)} className="p-2.5 bg-zinc-900 hover:bg-red-600 rounded-xl"><Trash2 size={16} /></button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr><td colSpan={8} className="p-20 text-center text-zinc-500 uppercase font-bold text-xs italic">Data tidak ditemukan.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* PAGINATION CONTROLS */}
+          {!loading && totalPages > 1 && (
+            <div className="p-6 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 bg-white/[0.01]">
+              <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredRankings.length)} of {filteredRankings.length} entries
+              </p>
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="p-3 bg-zinc-900 rounded-xl hover:bg-zinc-800 disabled:opacity-30 transition-all"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                {[...Array(totalPages)].map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => goToPage(i + 1)}
+                    className={`w-10 h-10 rounded-xl font-black text-xs transition-all ${currentPage === i + 1 ? 'bg-blue-600 text-white' : 'bg-zinc-900 text-zinc-500 hover:bg-zinc-800'}`}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+                <button 
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="p-3 bg-zinc-900 rounded-xl hover:bg-zinc-800 disabled:opacity-30 transition-all"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* MODAL */}
+      {/* MODAL (Tetap sama dengan perbaikan binding) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -415,6 +433,7 @@ export default function AdminRanking() {
             </div>
             
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
+              {/* Foto Upload */}
               <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-3xl">
                 <div className="w-20 h-20 bg-zinc-900 rounded-2xl overflow-hidden flex items-center justify-center">
                   {formData.photo_url ? <img src={formData.photo_url} className="w-full h-full object-cover" /> : <Camera className="text-zinc-700" />}
@@ -424,7 +443,7 @@ export default function AdminRanking() {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     setIsUploading(true);
-                    const { data } = await supabase.storage.from('images').upload(`ranking-photos/${Date.now()}`, file);
+                    const { data, error } = await supabase.storage.from('images').upload(`ranking-photos/${Date.now()}`, file);
                     if (data) {
                       const { data: { publicUrl } } = supabase.storage.from('images').getPublicUrl(data.path);
                       setFormData(prev => ({ ...prev, photo_url: publicUrl }));
@@ -444,14 +463,14 @@ export default function AdminRanking() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-zinc-500 uppercase">Kategori</label>
-                    <select className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 font-bold text-xs uppercase" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })}>
+                    <select className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 font-bold text-xs uppercase text-white" value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })}>
                       <option value="MUDA">MUDA</option>
                       <option value="SENIOR">SENIOR</option>
                     </select>
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-black text-zinc-500 uppercase">Seed</label>
-                    <select className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 font-bold text-xs uppercase" value={formData.seed} onChange={(e) => setFormData({ ...formData, seed: e.target.value })}>
+                    <select className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 font-bold text-xs uppercase text-white" value={formData.seed} onChange={(e) => setFormData({ ...formData, seed: e.target.value })}>
                       <option value="Seed A">Seed A</option>
                       <option value="Seed B+">Seed B+</option>
                       <option value="Seed B-">Seed B-</option>
@@ -474,7 +493,7 @@ export default function AdminRanking() {
 
                 <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-600/20 flex justify-between items-center">
                   <span className="text-[10px] font-black uppercase text-blue-400 italic">Total Poin Ranking</span>
-                  <span className="text-3xl font-black">{(Number(formData.poin) + Number(formData.bonus)).toLocaleString()}</span>
+                  <span className="text-3xl font-black">{(Number(formData.poin || 0) + Number(formData.bonus || 0)).toLocaleString()}</span>
                 </div>
               </div>
 
