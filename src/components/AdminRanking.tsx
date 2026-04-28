@@ -30,9 +30,9 @@ interface Ranking {
   player_name: string;
   category: string;
   seed: string;
-  total_points: number;
-  bonus: number;
-  poin: number;
+  total_points: number; // Hasil Akhir (Base + Bonus)
+  bonus: number;        // Diambil dari atlet_stats.total_points (Added Points)
+  poin: number;         // Diambil dari atlet_stats.points (Base Points)
   photo_url?: string;
   updated_at?: string;
 }
@@ -75,7 +75,7 @@ export default function AdminRanking() {
       Seed: r.seed,
       "Base Points": r.poin,
       "Added Points": r.bonus,
-      "Total Points": r.total_points
+      "Total Ranking Points": r.total_points
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -108,7 +108,7 @@ export default function AdminRanking() {
       theme: 'grid',
       headStyles: { fillColor: [37, 99, 235], fontSize: 10, halign: 'center' },
       styles: { fontSize: 9 },
-      columnStyles: { 0: { halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'center' } }
+      columnStyles: { 0: { halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'center', fontStyle: 'bold' } }
     });
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
@@ -134,10 +134,16 @@ export default function AdminRanking() {
           if (profile) {
             const base = Number(stat.points) || 0;
             const added = Number(stat.total_points) || 0; 
+            
+            // Perbaikan Logika: total_points di rankings = base + bonus (added)
+            const calculatedTotal = base + added;
 
             let normalizedSeed = stat.seed || 'Non-Seed';
             if (!normalizedSeed.includes('Seed') && normalizedSeed !== 'Non-Seed') {
-                normalizedSeed = `Seed ${normalizedSeed}`;
+                if (normalizedSeed === 'A') normalizedSeed = 'Seed A';
+                else if (normalizedSeed === 'B+') normalizedSeed = 'Seed B+';
+                else if (normalizedSeed === 'B-') normalizedSeed = 'Seed B-';
+                else if (normalizedSeed === 'C') normalizedSeed = 'Seed C';
             }
 
             return {
@@ -148,7 +154,7 @@ export default function AdminRanking() {
               photo_url: profile.foto_url || null,
               poin: base,
               bonus: added,
-              total_points: base + added, // Kalkulasi Akurat
+              total_points: calculatedTotal,
               updated_at: new Date().toISOString(),
             };
           }
@@ -175,6 +181,7 @@ export default function AdminRanking() {
     setLoading(true);
     try {
       await autoSyncData();
+      
       const { data, error } = await supabase
         .from('rankings')
         .select('*')
@@ -231,7 +238,7 @@ export default function AdminRanking() {
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
       const added = Number(formData.bonus) || 0;
-      const total = base + added; // LOGIKA PENJUMLAHAN AKURAT
+      const calculatedTotal = base + added; // Logika perhitungan akurat
       
       const payload = {
         player_name: cleanName,
@@ -239,17 +246,19 @@ export default function AdminRanking() {
         seed: formData.seed,
         poin: base,
         bonus: added,
-        total_points: total,
+        total_points: calculatedTotal,
         photo_url: formData.photo_url || null,
         updated_at: new Date().toISOString(),
         pendaftaran_id: formData.pendaftaran_id 
       };
 
-      // 1. Update ke tabel Rankings
+      // 1. Update/Upsert ke tabel Rankings
       if (editingId) {
-        await supabase.from('rankings').update(payload).eq('id', editingId);
+        const { error: rankError } = await supabase.from('rankings').update(payload).eq('id', editingId);
+        if (rankError) throw rankError;
       } else {
-        await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
+        const { error: rankError } = await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
+        if (rankError) throw rankError;
       }
 
       // 2. SINKRONISASI KE ATLET_STATS
@@ -260,7 +269,7 @@ export default function AdminRanking() {
           .from('atlet_stats')
           .update({
             points: base,
-            total_points: added, // Sesuai struktur DB Anda: total_points di stats = Added Points (Bonus)
+            total_points: added, // Added Points disimpan di kolom total_points atlet_stats
             seed: dbSeed,
             updated_at: new Date().toISOString()
           })
@@ -271,7 +280,7 @@ export default function AdminRanking() {
       
       setIsModalOpen(false);
       setEditingId(null);
-      setSuccessMsg('Data ranking berhasil diperbarui secara sistemik!');
+      setSuccessMsg('Data ranking & statistik berhasil disinkronkan!');
       await fetchRankings(); 
     } catch (err: any) {
       setFormError(err.message);
@@ -317,7 +326,6 @@ export default function AdminRanking() {
           </div>
         )}
 
-        {/* HEADER SECTION */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
           <div>
             <h1 className="text-5xl font-black italic tracking-tighter uppercase leading-none">
@@ -347,7 +355,6 @@ export default function AdminRanking() {
           </div>
         </div>
 
-        {/* FILTER BAR */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -382,7 +389,6 @@ export default function AdminRanking() {
           </select>
         </div>
 
-        {/* TABLE SECTION */}
         <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
           <table className="w-full text-left min-w-[1000px]">
             <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
@@ -474,7 +480,6 @@ export default function AdminRanking() {
           </table>
         </div>
 
-        {/* PAGINATION */}
         {totalPages > 1 && (
           <div className="flex justify-between items-center mt-8 px-2">
             <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
@@ -500,7 +505,6 @@ export default function AdminRanking() {
         )}
       </div>
 
-      {/* MODAL FORM */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -592,7 +596,7 @@ export default function AdminRanking() {
               <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-600/20 flex justify-between items-center shadow-lg shadow-blue-600/5">
                 <div className="flex flex-col">
                   <span className="text-[10px] font-black uppercase text-blue-400 italic leading-none">Total Poin Akumulasi</span>
-                  <span className="text-[9px] text-zinc-500 uppercase mt-1">Otomatis Terkalkulasi</span>
+                  <span className="text-[9px] text-zinc-500 uppercase mt-1">Base + Added Points</span>
                 </div>
                 <span className="text-3xl font-black text-white">
                   {((Number(formData.poin) || 0) + (Number(formData.bonus) || 0)).toLocaleString()}
