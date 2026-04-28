@@ -18,7 +18,7 @@ import {
   Download,
   FileText,
   Table as TableIcon
-} from 'lucide-react'; // Perbaikan typo import dari 'lucide-center' ke 'lucide-react'
+} from 'lucide-react';
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -75,7 +75,7 @@ export default function AdminRanking() {
       Seed: r.seed,
       "Base Points": r.poin,
       "Added Points": r.bonus,
-      "Total Points": (Number(r.poin) || 0) + (Number(r.bonus) || 0) // Perbaikan Logika Kalkulasi
+      "Total Points": r.total_points
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -98,7 +98,7 @@ export default function AdminRanking() {
       r.seed,
       r.poin,
       r.bonus,
-      (Number(r.poin) || 0) + (Number(r.bonus) || 0) // Perbaikan Logika Kalkulasi
+      r.total_points
     ]);
 
     doc.autoTable({
@@ -108,7 +108,7 @@ export default function AdminRanking() {
       theme: 'grid',
       headStyles: { fillColor: [37, 99, 235], fontSize: 10, halign: 'center' },
       styles: { fontSize: 9 },
-      columnStyles: { 0: { halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'center', fontStyle: 'bold' } }
+      columnStyles: { 0: { halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'center' } }
     });
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
@@ -136,11 +136,8 @@ export default function AdminRanking() {
             const added = Number(stat.total_points) || 0; 
 
             let normalizedSeed = stat.seed || 'Non-Seed';
-            if (!normalizedSeed.includes('Seed')) {
-                if (normalizedSeed === 'A') normalizedSeed = 'Seed A';
-                else if (normalizedSeed === 'B+') normalizedSeed = 'Seed B+';
-                else if (normalizedSeed === 'B-') normalizedSeed = 'Seed B-';
-                else if (normalizedSeed === 'C') normalizedSeed = 'Seed C';
+            if (!normalizedSeed.includes('Seed') && normalizedSeed !== 'Non-Seed') {
+                normalizedSeed = `Seed ${normalizedSeed}`;
             }
 
             return {
@@ -151,7 +148,7 @@ export default function AdminRanking() {
               photo_url: profile.foto_url || null,
               poin: base,
               bonus: added,
-              total_points: base + added, // Penjumlahan Poin + Bonus
+              total_points: base + added, // Kalkulasi Akurat
               updated_at: new Date().toISOString(),
             };
           }
@@ -178,7 +175,6 @@ export default function AdminRanking() {
     setLoading(true);
     try {
       await autoSyncData();
-      
       const { data, error } = await supabase
         .from('rankings')
         .select('*')
@@ -235,6 +231,7 @@ export default function AdminRanking() {
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
       const added = Number(formData.bonus) || 0;
+      const total = base + added; // LOGIKA PENJUMLAHAN AKURAT
       
       const payload = {
         player_name: cleanName,
@@ -242,18 +239,20 @@ export default function AdminRanking() {
         seed: formData.seed,
         poin: base,
         bonus: added,
-        total_points: base + added, // Sinkronisasi Kalkulasi
+        total_points: total,
         photo_url: formData.photo_url || null,
         updated_at: new Date().toISOString(),
         pendaftaran_id: formData.pendaftaran_id 
       };
 
+      // 1. Update ke tabel Rankings
       if (editingId) {
         await supabase.from('rankings').update(payload).eq('id', editingId);
       } else {
         await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
       }
 
+      // 2. SINKRONISASI KE ATLET_STATS
       if (formData.pendaftaran_id) {
         let dbSeed = formData.seed?.replace('Seed ', '') || 'Non-Seed';
         
@@ -261,7 +260,7 @@ export default function AdminRanking() {
           .from('atlet_stats')
           .update({
             points: base,
-            total_points: added, 
+            total_points: added, // Sesuai struktur DB Anda: total_points di stats = Added Points (Bonus)
             seed: dbSeed,
             updated_at: new Date().toISOString()
           })
@@ -293,6 +292,7 @@ export default function AdminRanking() {
     }
   };
 
+  // --- LOGIKA FILTER & PAGINATION ---
   const filteredRankings = rankings.filter((r) => {
     const matchSearch = (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchSeed = selectedSeed === 'Semua' || r.seed === selectedSeed;
@@ -317,6 +317,7 @@ export default function AdminRanking() {
           </div>
         )}
 
+        {/* HEADER SECTION */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
           <div>
             <h1 className="text-5xl font-black italic tracking-tighter uppercase leading-none">
@@ -346,6 +347,7 @@ export default function AdminRanking() {
           </div>
         </div>
 
+        {/* FILTER BAR */}
         <div className="bg-zinc-900/40 border border-white/5 p-3 rounded-2xl mb-8 flex flex-col md:flex-row gap-3 backdrop-blur-sm">
           <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
@@ -380,6 +382,7 @@ export default function AdminRanking() {
           </select>
         </div>
 
+        {/* TABLE SECTION */}
         <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
           <table className="w-full text-left min-w-[1000px]">
             <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
@@ -434,15 +437,14 @@ export default function AdminRanking() {
                       </span>
                     </td>
                     <td className="p-5">
-                      <span className="text-zinc-400 font-bold text-xs">{(Number(item.poin) || 0).toLocaleString()}</span>
+                      <span className="text-zinc-400 font-bold text-xs">{(item.poin || 0).toLocaleString()}</span>
                     </td>
                     <td className="p-5">
-                      <span className="text-emerald-500 font-bold text-xs">+{ (Number(item.bonus) || 0).toLocaleString()}</span>
+                      <span className="text-emerald-500 font-bold text-xs">+{ (item.bonus || 0).toLocaleString()}</span>
                     </td>
                     <td className="p-5 text-center">
                       <span className="text-xl font-black text-white group-hover:text-blue-500 transition-colors">
-                        {/* Perbaikan Tampilan Total: Poin + Bonus */}
-                        {((Number(item.poin) || 0) + (Number(item.bonus) || 0)).toLocaleString()}
+                        {(item.total_points || 0).toLocaleString()}
                       </span>
                     </td>
                     <td className="p-5 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
@@ -472,6 +474,7 @@ export default function AdminRanking() {
           </table>
         </div>
 
+        {/* PAGINATION */}
         {totalPages > 1 && (
           <div className="flex justify-between items-center mt-8 px-2">
             <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
@@ -497,6 +500,7 @@ export default function AdminRanking() {
         )}
       </div>
 
+      {/* MODAL FORM */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/95 backdrop-blur-xl">
           <div className="bg-zinc-950 w-full max-w-lg rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl">
@@ -591,7 +595,6 @@ export default function AdminRanking() {
                   <span className="text-[9px] text-zinc-500 uppercase mt-1">Otomatis Terkalkulasi</span>
                 </div>
                 <span className="text-3xl font-black text-white">
-                  {/* Kalkulasi Real-time di Form */}
                   {((Number(formData.poin) || 0) + (Number(formData.bonus) || 0)).toLocaleString()}
                 </span>
               </div>
