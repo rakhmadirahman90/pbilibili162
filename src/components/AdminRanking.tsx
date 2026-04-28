@@ -18,7 +18,7 @@ import {
   Download,
   FileText,
   Table as TableIcon
-} from 'lucide-react'; // Perbaikan typo: lucide-react
+} from 'lucide-react';
 import { saveAs } from "file-saver";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -30,9 +30,9 @@ interface Ranking {
   player_name: string;
   category: string;
   seed: string;
-  total_points: number; // Ini adalah hasil kalkulasi akhir (Base + Bonus)
-  bonus: number;        // Ini adalah Added Points (dari atlet_stats.total_points)
-  poin: number;         // Ini adalah Base Points (dari atlet_stats.points)
+  total_points: number; // Hasil Akhir: Base + Bonus
+  bonus: number;        // Sinkron dengan total_points di atlet_stats
+  poin: number;         // Sinkron dengan points di atlet_stats
   photo_url?: string;
   updated_at?: string;
 }
@@ -74,8 +74,8 @@ export default function AdminRanking() {
       Kategori: r.category,
       Seed: r.seed,
       "Base Points": r.poin,
-      "Added Points": r.bonus,
-      "Total Points": r.total_points
+      "Added Points (Bonus)": r.bonus,
+      "Total Ranking Points": r.total_points
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -108,7 +108,7 @@ export default function AdminRanking() {
       theme: 'grid',
       headStyles: { fillColor: [37, 99, 235], fontSize: 10, halign: 'center' },
       styles: { fontSize: 9 },
-      columnStyles: { 0: { halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'center' } }
+      columnStyles: { 0: { halign: 'center' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'center', fontStyle: 'bold' } }
     });
     doc.save("Ranking_PB_Bilibili_162.pdf");
   };
@@ -130,14 +130,15 @@ export default function AdminRanking() {
 
       if (pendaftaranError) throw pendaftaranError;
 
-      // 3. Mapping data dengan logika kalkulasi yang presisi
+      // 3. Mapping data dengan Logika Perhitungan yang Benar
       const finalDataArray = (statsData || [])
         .map((stat) => {
           const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
           if (profile) {
-            const basePoints = Number(stat.points) || 0;
-            const addedPoints = Number(stat.total_points) || 0; // Sinkronkan atlet_stats.total_points ke rankings.bonus
+            const base = Number(stat.points) || 0;
+            const added = Number(stat.total_points) || 0; // total_points di DB stats = Bonus di UI
 
+            // Normalisasi Seed String
             let normalizedSeed = stat.seed || 'Non-Seed';
             if (!normalizedSeed.includes('Seed') && normalizedSeed !== 'Non-Seed') {
                 normalizedSeed = `Seed ${normalizedSeed}`;
@@ -149,9 +150,9 @@ export default function AdminRanking() {
               category: profile.kategori_atlet || 'SENIOR',
               seed: normalizedSeed,
               photo_url: profile.foto_url || null,
-              poin: basePoints,      // Base
-              bonus: addedPoints,    // Added
-              total_points: basePoints + addedPoints, // Kalkulasi Akurat
+              poin: base,
+              bonus: added,
+              total_points: base + added, // Penjumlahan Akurat
               updated_at: new Date().toISOString(),
             };
           }
@@ -160,7 +161,7 @@ export default function AdminRanking() {
         .filter(Boolean);
 
       if (finalDataArray.length > 0) {
-        // Upsert ke tabel rankings dengan kunci konflik nama
+        // Upsert ke rankings agar sinkron secara sistemik
         const { error: upsertError } = await supabase
           .from('rankings')
           .upsert(finalDataArray, { onConflict: 'player_name' });
@@ -178,7 +179,7 @@ export default function AdminRanking() {
   const fetchRankings = useCallback(async () => {
     setLoading(true);
     try {
-      await autoSyncData(); // Jalankan sinkronisasi sebelum mengambil data tampilan
+      await autoSyncData(); // Jalankan sinkronisasi dulu
       
       const { data, error } = await supabase
         .from('rankings')
@@ -198,23 +199,12 @@ export default function AdminRanking() {
     fetchRankings();
   }, [fetchRankings]);
 
-  // Real-time listener untuk tabel atlet_stats
   useEffect(() => {
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'atlet_stats' },
-        () => {
-          fetchRankings(); // Refresh data jika ada perubahan di tabel stats
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [fetchRankings]);
+    if (successMsg) {
+      const timer = setTimeout(() => setSuccessMsg(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [successMsg]);
 
   // --- HANDLERS ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -247,9 +237,9 @@ export default function AdminRanking() {
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
       const added = Number(formData.bonus) || 0;
-      const calculatedTotal = base + added;
+      const calculatedTotal = base + added; // Perhitungan Total Poin
       
-      const rankingPayload = {
+      const payload = {
         player_name: cleanName,
         category: formData.category,
         seed: formData.seed,
@@ -263,20 +253,22 @@ export default function AdminRanking() {
 
       // 1. Update ke tabel Rankings
       if (editingId) {
-        await supabase.from('rankings').update(rankingPayload).eq('id', editingId);
+        const { error: rankUpdateError } = await supabase.from('rankings').update(payload).eq('id', editingId);
+        if (rankUpdateError) throw rankUpdateError;
       } else {
-        await supabase.from('rankings').upsert([rankingPayload], { onConflict: 'player_name' });
+        const { error: rankUpsertError } = await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
+        if (rankUpsertError) throw rankUpsertError;
       }
 
-      // 2. Sinkronisasi ke tabel atlet_stats agar identik
+      // 2. SINKRONISASI KRITIKAL: Update tabel atlet_stats
       if (formData.pendaftaran_id) {
-        const dbSeed = formData.seed?.replace('Seed ', '') || 'Non-Seed';
+        let dbSeed = formData.seed?.replace('Seed ', '') || 'Non-Seed';
         
         const { error: statsUpdateError } = await supabase
           .from('atlet_stats')
           .update({
-            points: base,           // Sinkron dengan Base Points
-            total_points: added,    // Sinkron dengan Added Points/Bonus
+            points: base,
+            total_points: added, // "Added Points" di UI adalah "total_points" di DB Stats
             seed: dbSeed,
             updated_at: new Date().toISOString()
           })
@@ -287,7 +279,7 @@ export default function AdminRanking() {
       
       setIsModalOpen(false);
       setEditingId(null);
-      setSuccessMsg('Data ranking & statistik berhasil disinkronkan!');
+      setSuccessMsg('Data Berhasil Disinkronkan ke Seluruh Sistem!');
       await fetchRankings(); 
     } catch (err: any) {
       setFormError(err.message);
@@ -342,7 +334,7 @@ export default function AdminRanking() {
             <div className="flex items-center gap-2 mt-2">
               <span className="w-2 h-2 bg-blue-600 animate-pulse rounded-full"></span>
               <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-[0.2em]">
-                PB BILIBILI 162 • Sistem Manajemen Poin & Seed
+                PB BILIBILI 162 • Sistem Manajemen Poin & Seed Terintegrasi
               </p>
             </div>
           </div>
@@ -408,7 +400,7 @@ export default function AdminRanking() {
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Kategori</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Seeded</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest">Base Points</th>
-                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Added Points</th>
+                <th className="p-5 text-[10px] font-black uppercase tracking-widest">Added Points (Bonus)</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest text-center">Total Ranking</th>
                 <th className="p-5 text-[10px] font-black uppercase tracking-widest text-right">Aksi</th>
               </tr>
