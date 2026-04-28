@@ -30,9 +30,9 @@ interface Ranking {
   player_name: string;
   category: string;
   seed: string;
-  total_points: number;
-  bonus: number;
-  poin: number;
+  total_points: number; // Hasil Akhir (Base + Added)
+  bonus: number;        // Ini akan memetakan ke 'total_points' di atlet_stats (Added Points)
+  poin: number;         // Ini akan memetakan ke 'points' di atlet_stats (Base Points)
   photo_url?: string;
   updated_at?: string;
 }
@@ -116,27 +116,27 @@ export default function AdminRanking() {
   // --- LOGIKA SINKRONISASI DATA UTAMA ---
   const autoSyncData = useCallback(async () => {
     try {
-      // 1. Ambil data stats terbaru (Added Points = total_points di tabel atlet_stats)
+      // 1. Ambil data stats terbaru
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
         .select('pendaftaran_id, points, total_points, seed');
 
       if (statsError) throw statsError;
 
-      // 2. Ambil profil pendaftaran untuk data kategori dan foto
+      // 2. Ambil profil pendaftaran
       const { data: pendaftaranData, error: pendaftaranError } = await supabase
         .from('pendaftaran')
         .select('id, nama, foto_url, kategori_atlet');
 
       if (pendaftaranError) throw pendaftaranError;
 
-      // 3. Mapping data untuk memastikan tabel Rankings sinkron dengan Manajemen Poin
+      // 3. Mapping data untuk memastikan tabel Rankings sinkron
       const finalDataArray = (statsData || [])
         .map((stat) => {
           const profile = (pendaftaranData || []).find((p) => p.id === stat.pendaftaran_id);
           if (profile) {
-            const base = Number(stat.points) || 0;
-            const added = Number(stat.total_points) || 0; // "total_points" di atlet_stats adalah "Added Points" di UI
+            const basePoints = Number(stat.points) || 0;
+            const addedPoints = Number(stat.total_points) || 0; 
 
             let normalizedSeed = stat.seed || 'Non-Seed';
             if (!normalizedSeed.includes('Seed')) {
@@ -152,9 +152,9 @@ export default function AdminRanking() {
               category: profile.kategori_atlet || 'SENIOR',
               seed: normalizedSeed,
               photo_url: profile.foto_url || null,
-              poin: base,
-              bonus: added,
-              total_points: base + added,
+              poin: basePoints,      // Mapping: points -> poin
+              bonus: addedPoints,    // Mapping: total_points -> bonus
+              total_points: basePoints + addedPoints, // Kalkulasi Akhir
               updated_at: new Date().toISOString(),
             };
           }
@@ -163,7 +163,6 @@ export default function AdminRanking() {
         .filter(Boolean);
 
       if (finalDataArray.length > 0) {
-        // Update tabel rankings secara massal
         const { error: upsertError } = await supabase
           .from('rankings')
           .upsert(finalDataArray, { onConflict: 'player_name' });
@@ -181,7 +180,6 @@ export default function AdminRanking() {
   const fetchRankings = useCallback(async () => {
     setLoading(true);
     try {
-      // Jalankan sinkronisasi sebelum fetch data tampilan
       await autoSyncData();
       
       const { data, error } = await supabase
@@ -240,6 +238,7 @@ export default function AdminRanking() {
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
       const added = Number(formData.bonus) || 0;
+      const totalCalculated = base + added;
       
       const payload = {
         player_name: cleanName,
@@ -247,7 +246,7 @@ export default function AdminRanking() {
         seed: formData.seed,
         poin: base,
         bonus: added,
-        total_points: base + added,
+        total_points: totalCalculated,
         photo_url: formData.photo_url || null,
         updated_at: new Date().toISOString(),
         pendaftaran_id: formData.pendaftaran_id 
@@ -260,15 +259,15 @@ export default function AdminRanking() {
         await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
       }
 
-      // 2. SINKRONISASI INSTAN: Update tabel atlet_stats agar Manajemen Poin berubah otomatis
+      // 2. SINKRONISASI KE ATLET_STATS
       if (formData.pendaftaran_id) {
         let dbSeed = formData.seed?.replace('Seed ', '') || 'Non-Seed';
         
         const { error: statsUpdateError } = await supabase
           .from('atlet_stats')
           .update({
-            points: base,
-            total_points: added, // Sesuai logika manajemen poin PB Bilibili 162
+            points: base,           // Base Points
+            total_points: added,     // Added Points (di tabel stats kolomnya bernama total_points)
             seed: dbSeed,
             updated_at: new Date().toISOString()
           })
@@ -280,7 +279,7 @@ export default function AdminRanking() {
       setIsModalOpen(false);
       setEditingId(null);
       setSuccessMsg('Data ranking berhasil diperbarui secara sistemik!');
-      await fetchRankings(); // Refresh total data
+      await fetchRankings(); 
     } catch (err: any) {
       setFormError(err.message);
     } finally {
@@ -300,7 +299,6 @@ export default function AdminRanking() {
     }
   };
 
-  // --- LOGIKA FILTER & PAGINATION ---
   const filteredRankings = rankings.filter((r) => {
     const matchSearch = (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchSeed = selectedSeed === 'Semua' || r.seed === selectedSeed;
@@ -325,7 +323,6 @@ export default function AdminRanking() {
           </div>
         )}
 
-        {/* HEADER SECTION */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
           <div>
             <h1 className="text-5xl font-black italic tracking-tighter uppercase leading-none">
@@ -390,7 +387,6 @@ export default function AdminRanking() {
           </select>
         </div>
 
-        {/* TABLE SECTION */}
         <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl overflow-x-auto">
           <table className="w-full text-left min-w-[1000px]">
             <thead className="bg-white/[0.02] border-b border-white/5 text-zinc-500">
@@ -597,10 +593,11 @@ export default function AdminRanking() {
                 </div>
               </div>
 
+              {/* LOGIKA TAMPILAN TOTAL POIN */}
               <div className="bg-blue-600/10 p-4 rounded-2xl border border-blue-600/20 flex justify-between items-center shadow-lg shadow-blue-600/5">
                 <div className="flex flex-col">
                   <span className="text-[10px] font-black uppercase text-blue-400 italic leading-none">Total Poin Akumulasi</span>
-                  <span className="text-[9px] text-zinc-500 uppercase mt-1">Otomatis Terkalkulasi</span>
+                  <span className="text-[9px] text-zinc-500 uppercase mt-1">Otomatis Terkalkulasi (Base + Added)</span>
                 </div>
                 <span className="text-3xl font-black text-white">
                   {((Number(formData.poin) || 0) + (Number(formData.bonus) || 0)).toLocaleString()}
