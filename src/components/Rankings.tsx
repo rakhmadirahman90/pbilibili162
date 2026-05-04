@@ -138,33 +138,12 @@ const Rankings: React.FC = () => {
   const [playerHistory, setPlayerHistory] = useState<PointHistory[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  useEffect(() => {
-    fetchRankings();
-
-    const channel = supabase
-      .channel('rankings_realtime_v3')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'rankings' },
-        () => fetchRankings()
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'audit_poin' },
-        () => fetchRankings()
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
+  // --- FUNGSI FETCH UTAMA: Diperbaiki untuk Sinkronisasi Penuh ---
   const fetchRankings = async () => {
     setLoading(true);
     setFetchError(null);
     try {
-      // 1. Ambil data rankings terbaru dari database
+      // 1. Ambil data rankings murni dari database (Single Source of Truth)
       const { data: rankingsData, error: rankingsError } = await supabase
         .from('rankings')
         .select('*')
@@ -172,7 +151,7 @@ const Rankings: React.FC = () => {
 
       if (rankingsError) throw rankingsError;
 
-      // 2. Ambil data audit untuk indikator bonus hari ini (start of day)
+      // 2. Ambil audit harian hanya untuk status (+/-) hari ini
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
 
@@ -183,7 +162,7 @@ const Rankings: React.FC = () => {
 
       if (auditError) throw auditError;
 
-      // 3. Gabungkan data: total_points murni dari tabel rankings
+      // 3. Merging: Gunakan total_points langsung dari tabel rankings agar identik dengan Admin
       const mergedData = (rankingsData || []).map((player) => {
         const dailyChange = (auditData || [])
           .filter(
@@ -195,27 +174,57 @@ const Rankings: React.FC = () => {
 
         return { 
           ...player, 
+          // Pastikan total_points berasal langsung dari data server rankings
+          total_points: player.total_points, 
           bonus: dailyChange 
         };
       });
 
       setDbRankings(mergedData);
     } catch (error: any) {
+      console.error('Fetch Error:', error);
       setFetchError(error.message || 'Gagal sinkronisasi data');
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    fetchRankings();
+
+    // Perbaikan Real-time Channel untuk menangkap Update dari Admin secara instan
+    const channel = supabase
+      .channel('rankings_realtime_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'rankings' },
+        () => {
+          console.log('Detected update in rankings table, re-fetching...');
+          fetchRankings();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'audit_poin' },
+        () => {
+          fetchRankings();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   const fetchHistoryForPlayer = async (playerName: string) => {
     setLoadingHistory(true);
     setPlayerHistory([]);
     try {
-      const cleanName = playerName.trim();
       const { data, error } = await supabase
         .from('audit_poin')
         .select('id, created_at, perubahan, poin_sebelum, poin_sesudah, admin_email, tipe_kegiatan')
-        .or(`atlet_nama.ilike.${cleanName},atlet_nama.eq.${cleanName}`)
+        .ilike('atlet_nama', playerName.trim())
         .order('created_at', { ascending: false })
         .limit(10);
 
@@ -365,7 +374,10 @@ const Rankings: React.FC = () => {
 
                     return (
                       <React.Fragment key={player.id}>
-                        <tr onClick={() => toggleExpand(player)} className={`cursor-pointer transition-all group ${isExpanded ? 'bg-blue-500/10' : 'hover:bg-white/[0.02]'}`}>
+                        <tr 
+                          onClick={() => toggleExpand(player)} 
+                          className={`cursor-pointer transition-all group ${isExpanded ? 'bg-blue-600/10' : 'hover:bg-white/[0.02]'}`}
+                        >
                           <td className="px-8 py-6 text-center">
                             <span className={`text-xl font-black italic ${globalRank <= 3 ? 'text-blue-400' : 'text-slate-700'}`}>
                               #{String(globalRank).padStart(2, '0')}
@@ -383,8 +395,12 @@ const Rankings: React.FC = () => {
                           </td>
                           <td className="px-6 py-6">
                             <div className="flex flex-col gap-1">
-                              <span className={`text-[9px] font-black px-2 py-1 rounded-md border text-center uppercase ${style.bg} ${style.text} ${style.border}`}>{player.seed || 'UNSEEDED'}</span>
-                              <span className="text-[8px] text-slate-600 font-bold text-center uppercase tracking-tighter">{player.category}</span>
+                              <span className={`text-[9px] font-black px-2 py-1 rounded-md border text-center uppercase ${style.bg} ${style.text} ${style.border}`}>
+                                {player.seed || 'UNSEEDED'}
+                              </span>
+                              <span className="text-[8px] text-slate-600 font-bold text-center uppercase tracking-tighter">
+                                {player.category}
+                              </span>
                             </div>
                           </td>
                           <td className="px-6 py-6 text-right font-mono font-black text-white text-xl">
