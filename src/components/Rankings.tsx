@@ -146,45 +146,67 @@ const Rankings: React.FC = () => {
     setLoading(true);
     setFetchError(null);
     try {
-      // 1. Ambil data dari atlet_stats tanpa memanggil kolom 'category' atau 'seeded'
-      // Gunakan kolom yang benar-benar ada di database berdasarkan image_6593ab.jpg
+      // 1. Ambil data mentah dari tabel rankings (untuk mendapatkan struktur dasar)
+      const { data: rankingsData, error: rankingsError } = await supabase
+        .from('rankings')
+        .select('*');
+  
+      if (rankingsError) throw rankingsError;
+  
+      // 2. Ambil data sumber kebenaran (atlet_stats) seperti pada kode Admin
+      // Admin menggunakan atlet_stats sebagai sumber poin dasar dan bonus
       const { data: statsData, error: statsError } = await supabase
         .from('atlet_stats')
-        .select('player_name, total_points') 
-        .order('total_points', { ascending: false });
+        .select('pendaftaran_id, points, total_points, seed');
   
       if (statsError) throw statsError;
   
-      // 2. Ambil data audit untuk indikator status harian
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
+      // 3. Ambil data pendaftaran untuk memastikan nama & foto sinkron
+      const { data: pendaftaranData, error: pendaftaranError } = await supabase
+        .from('pendaftaran')
+        .select('id, nama, foto_url, kategori_atlet');
   
-      const { data: auditData } = await supabase
-        .from('audit_poin')
-        .select('atlet_nama, perubahan')
-        .gte('created_at', startOfDay.toISOString());
+      if (pendaftaranError) throw pendaftaranError;
   
-      // 3. Mapping data
-      const mergedData = (statsData || []).map((player) => {
-        const dailyBonus = (auditData || [])
-          .filter(a => a.atlet_nama?.trim().toLowerCase() === player.player_name?.trim().toLowerCase())
-          .reduce((sum, current) => sum + (current.perubahan || 0), 0);
+      // 4. Proses penggabungan data (Logic Sinkronisasi Lengkap)
+      const syncedData = (rankingsData || []).map((rankItem) => {
+        // Cari data statistik berdasarkan pendaftaran_id
+        const stats = (statsData || []).find((s) => s.pendaftaran_id === rankItem.pendaftaran_id);
+        // Cari data profil untuk memastikan nama terbaru
+        const profile = (pendaftaranData || []).find((p) => p.id === rankItem.pendaftaran_id);
   
-        return { 
-          ...player,
-          // Karena kolom category/seeded tidak ada di atlet_stats, 
-          // kita set default atau biarkan kosong agar tidak error
-          category: 'SENIOR', 
-          seeded: '-',
-          total_points: Number(player.total_points || 0), 
-          bonus: dailyBonus 
+        // Logika Kalkulasi sesuai AdminRanking.tsx baris 90-91
+        const basePoints = stats ? (Number(stats.points) || 0) : (Number(rankItem.poin) || 0);
+        const addedPoints = stats ? (Number(stats.total_points) || 0) : (Number(rankItem.bonus) || 0);
+        
+        // Total akhir yang tampil di kolom "Total Ranking" di Admin
+        const finalTotal = basePoints + addedPoints;
+  
+        // Normalisasi Seed sesuai logic Admin baris 93-96
+        let currentSeed = stats?.seed || rankItem.seed || 'Non-Seed';
+        if (!currentSeed.includes('Seed') && currentSeed !== 'Non-Seed') {
+          currentSeed = `Seed ${currentSeed}`;
+        }
+  
+        return {
+          ...rankItem,
+          player_name: profile?.nama || rankItem.player_name,
+          photo_url: profile?.foto_url || rankItem.photo_url,
+          poin: basePoints,       // Base Points
+          bonus: addedPoints,     // Added Points (Stats)
+          total_points: finalTotal, // Hasil Akhir
+          seed: currentSeed,
+          category: profile?.kategori_atlet || rankItem.category
         };
       });
   
-      setDbRankings(mergedData);
+      // 5. Urutkan berdasarkan total poin tertinggi (Rank #01)
+      const sortedData = syncedData.sort((a, b) => b.total_points - a.total_points);
+  
+      setDbRankings(sortedData);
     } catch (error: any) {
-      console.error('Fetch Error:', error);
-      setFetchError(error.message); // Ini yang memunculkan pesan merah di layar
+      console.error('Sync Error:', error);
+      setFetchError(error.message);
     } finally {
       setLoading(false);
     }
