@@ -240,6 +240,7 @@ export default function App() {
   }, []);
 
   const handleNavigate = (sectionId: string, subPath?: string) => {
+    // 1. Logic for Dedicated Full-Page Views
     if (sectionId === 'kas') {
         setShowKas(true);
         setShowStruktur(false);
@@ -264,6 +265,7 @@ export default function App() {
         return;
     }
 
+    // 2. Logic for Landing Page Sections
     setShowStruktur(false);
     setShowKas(false);
     setShowDokumen(false);
@@ -271,16 +273,25 @@ export default function App() {
     if (sectionId === 'tentang-kami' || ['sejarah', 'visi-misi', 'fasilitas'].includes(subPath || '')) {
       if (subPath) setActiveAboutTab(subPath);
     }
+    
     if (sectionId === 'atlet' || sectionId === 'players') {
       const filterValue = subPath ? subPath.toLowerCase() : 'all';
       setActiveAthleteFilter(filterValue);
       window.dispatchEvent(new CustomEvent('filterAtlet', { detail: filterValue }));
     }
+
+    // 3. Precise Scrolling Logic
     setTimeout(() => {
-      const targetId = (sectionId === 'atlet' || sectionId === 'players') ? 'atlet' : (subPath || sectionId);
+      // Mapping logic for specific IDs from image_585638.jpg
+      let targetId = subPath || sectionId;
+      if (sectionId === 'atlet' || sectionId === 'players') targetId = 'atlet-section';
+      if (sectionId === 'peringkat' || subPath === 'peringkat') targetId = 'peringkat-section';
+      if (sectionId === 'quiz' || subPath === 'quiz') targetId = 'quiz-section';
+      if (sectionId === 'berita') targetId = 'berita-section';
+
       const element = document.getElementById(targetId);
       if (element) {
-        const offset = 80; 
+        const offset = 100; 
         const bodyRect = document.body.getBoundingClientRect().top;
         const elementRect = element.getBoundingClientRect().top;
         const offsetPosition = (elementRect - bodyRect) - offset;
@@ -338,23 +349,33 @@ export default function App() {
             </div>
 
             <AnimatePresence mode="wait">
-              {/* LOGIKA TAMPILAN DINAMIS */}
               {!showStruktur && !showKas && !showDokumen ? (
                 <motion.div key="landing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full">
                   <Hero />
-                  <About activeTab={activeAboutTab} onTabChange={(id) => setActiveAboutTab(id)} />
-                  <News />
-                  <section id="atlet">
+                  <section id="tentang-kami">
+                    <About activeTab={activeAboutTab} onTabChange={(id) => setActiveAboutTab(id)} />
+                  </section>
+                  <section id="berita-section">
+                    <News />
+                  </section>
+                  <section id="atlet-section">
                     <Athletes initialFilter={activeAthleteFilter} />
                   </section>
-                  <Ranking />
-                  {/* BARU: Teka-Teki Silang (TTS) Interaktif */}
-                  <BadmintonQuiz /> 
-                  <Gallery />
+                  <section id="peringkat-section">
+                    <Ranking />
+                  </section>
+                  <section id="quiz-section">
+                    <BadmintonQuiz /> 
+                  </section>
+                  <section id="galeri">
+                    <Gallery />
+                  </section>
                   <section id="register" className="py-20 bg-slate-900 w-full">
                     <RegistrationForm />
                   </section>
-                  <Contact />
+                  <section id="contact">
+                    <Contact />
+                  </section>
                 </motion.div>
               ) : showStruktur ? (
                 <motion.div key="struktur" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="pt-24 bg-slate-50 min-h-screen w-full">

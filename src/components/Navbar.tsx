@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Globe, ChevronDown, Menu, X, MapPin, UserPlus, Wallet, FileText } from 'lucide-react';
+import { Globe, ChevronDown, Menu, X, MapPin, UserPlus, Wallet, FileText, Trophy, BrainCircuit } from 'lucide-react';
 import { supabase } from '../supabase'; 
 
 interface NavbarProps {
@@ -19,7 +19,7 @@ export default function Navbar({ onNavigate }: NavbarProps) {
     default_lang: 'ID'
   });
 
-  // --- FETCH DATA NAVIGASI DENGAN PENAMBAHAN MENU KAS & DOKUMEN PENTING ---
+  // --- FETCH DATA NAVIGASI ---
   const fetchNavSettings = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -31,44 +31,51 @@ export default function Navbar({ onNavigate }: NavbarProps) {
 
       let finalNav = data || [];
 
-      // Jika data kosong, gunakan fallback default
       if (finalNav.length === 0) {
         finalNav = [
           { id: '1', label: 'Home', path: 'home', type: 'link', order_index: 0 },
           { id: '2', label: 'Tentang Kami', path: 'tentang-kami', type: 'dropdown', order_index: 1 },
           { id: '3', label: 'Berita', path: 'berita', type: 'link', order_index: 2 },
-          { id: '4', label: 'Kas', path: 'kas', type: 'link', order_index: 3 },
+          { id: '4', label: 'Peringkat', path: 'peringkat', type: 'dropdown', order_index: 3 },
+          { id: '5', label: 'Kas', path: 'kas', type: 'link', order_index: 4 },
           { id: '2-1', parent_id: '2', label: 'Sejarah', path: 'sejarah' },
           { id: '2-2', parent_id: '2', label: 'Visi Misi', path: 'visi-misi' },
           { id: '2-3', parent_id: '2', label: 'Fasilitas', path: 'fasilitas' },
-          { id: '2-4', parent_id: '2', label: 'Dokumen Penting', path: 'dokumen-penting' } // Fallback Dokumen
+          { id: '2-4', parent_id: '2', label: 'Dokumen Penting', path: 'dokumen-penting' },
+          { id: '4-1', parent_id: '4', label: 'Ranking Atlet', path: 'peringkat' },
+          { id: '4-2', parent_id: '4', label: 'Quiz Badminton', path: 'quiz' }
         ];
       } else {
-        // Cek apakah menu 'kas' sudah ada secara global
+        // Logika penyisipan menu dinamis agar tetap muncul meski di DB belum ada
         const hasKas = finalNav.some((item: any) => item.path === 'kas');
         if (!hasKas) {
           finalNav.push({ id: 'kas-dynamic', label: 'Kas', path: 'kas', type: 'link', order_index: 98 });
         }
         
-        // Cek keberadaan parent "Tentang Kami" (case-insensitive check)
         const parentTentang = finalNav.find((item: any) => 
           item.path === 'tentang-kami' || item.label.toLowerCase().includes('tentang')
         );
-
-        // Cek apakah 'dokumen-penting' sudah ada di dalam data database
         const hasDocs = finalNav.some((item: any) => item.path === 'dokumen-penting');
-        
-        // Jika belum ada di database tapi parent-nya ada, sisipkan secara programatik
         if (!hasDocs && parentTentang) {
-          finalNav.push({ 
-            id: 'docs-dynamic', 
-            parent_id: parentTentang.id, 
-            label: 'Dokumen Penting', 
-            path: 'dokumen-penting' 
-          });
+          finalNav.push({ id: 'docs-dynamic', parent_id: parentTentang.id, label: 'Dokumen Penting', path: 'dokumen-penting' });
+        }
+
+        let parentRanking = finalNav.find((item: any) => 
+          item.path === 'peringkat' || item.path === 'ranking' || item.label.toLowerCase().includes('peringkat')
+        );
+
+        if (parentRanking) {
+          parentRanking.type = 'dropdown';
+          const hasQuiz = finalNav.some((item: any) => item.path === 'quiz');
+          if (!hasQuiz) {
+            finalNav.push({ id: 'quiz-dynamic', parent_id: parentRanking.id, label: 'Quiz Badminton', path: 'quiz', order_index: 99 });
+          }
+          const hasRankingSub = finalNav.some((item: any) => item.parent_id === parentRanking?.id && item.path === 'peringkat');
+          if (!hasRankingSub) {
+            finalNav.push({ id: 'ranking-sub-dynamic', parent_id: parentRanking.id, label: 'Ranking Atlet', path: 'peringkat', order_index: 1 });
+          }
         }
       }
-      
       setNavData(finalNav);
     } catch (err) {
       console.error("Fetch Nav Error:", err);
@@ -103,48 +110,60 @@ export default function Navbar({ onNavigate }: NavbarProps) {
   }, [fetchNavSettings, fetchBrandingSettings]);
 
   const getSubMenus = (parentId: string) => {
-    return navData.filter(item => item.parent_id === parentId);
+    return navData.filter(item => item.parent_id === parentId).sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
   };
 
-  // --- LOGIKA NAVIGASI PERBAIKAN ---
+  // --- PERBAIKAN LOGIKA NAVIGASI ---
   const handleNavClick = (path: string, subPath?: string) => {
     setActiveDropdown(null);
     setIsMobileMenuOpen(false);
 
-    // 1. Penanganan Home
+    // 1. Home
     if (path === 'home' || path === '/') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       onNavigate('home');
       return;
     }
 
-    // 2. Penanganan Khusus Menu KAS
+    // 2. Kas
     if (path === 'kas') {
       onNavigate('kas');
       scrollToSection('kas-section');
       return;
     }
 
-    // 3. Penanganan Khusus Dokumen Penting (Sangat penting untuk pemicu di App.tsx)
+    // 3. Quiz Badminton
+    if (subPath === 'quiz' || path === 'quiz') {
+      onNavigate('quiz');
+      scrollToSection('quiz-section'); // Mengarah ke id="quiz-section"
+      return;
+    }
+
+    // 4. Ranking Atlet (Peringkat)
+    if (subPath === 'peringkat' || path === 'peringkat') {
+      onNavigate('peringkat');
+      scrollToSection('peringkat-section'); // Mengarah ke id="peringkat-section"
+      return;
+    }
+
+    // 5. Dokumen Penting
     if (subPath === 'dokumen-penting' || path === 'dokumen-penting') {
       onNavigate('dokumen-penting');
       scrollToSection('dokumen-section');
       return;
     }
 
-    // 4. Jika Path adalah 'tentang-kami'
+    // 6. Tentang Kami
     if (path === 'tentang-kami' || path === 'about') {
       onNavigate('tentang-kami', subPath);
       scrollToSection('tentang-kami');
       return;
     }
 
-    // 5. Penanganan Section Lain secara umum
     onNavigate(path, subPath);
     scrollToSection(subPath || path);
   };
 
-  // Helper Smooth Scroll
   const scrollToSection = (id: string) => {
     setTimeout(() => {
       const element = document.getElementById(id);
@@ -204,8 +223,12 @@ export default function Navbar({ onNavigate }: NavbarProps) {
                         onClick={() => handleNavClick(menu.path, sub.path)} 
                         className="dropdown-item flex items-center justify-between"
                       >
-                        {sub.label}
+                        <span className="flex items-center gap-2">
+                          {sub.path === 'quiz' && <BrainCircuit size={12} className="text-blue-400" />}
+                          {sub.label}
+                        </span>
                         {sub.path === 'dokumen-penting' && <FileText size={12} className="text-blue-500 opacity-80" />}
+                        {sub.path === 'peringkat' && <Trophy size={12} className="text-yellow-500 opacity-80" />}
                       </button>
                     ))}
                   </div>
@@ -235,46 +258,38 @@ export default function Navbar({ onNavigate }: NavbarProps) {
           </div>
         </div>
 
-        {/* MOBILE TRIGGER */}
+        {/* MOBILE MENU */}
         <button className="md:hidden p-2 text-slate-300 hover:text-white transition-colors" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
           {isMobileMenuOpen ? <X size={28} /> : <Menu size={28} />}
         </button>
       </div>
 
-      {/* MOBILE MENU */}
       {isMobileMenuOpen && (
         <div className="md:hidden absolute top-20 left-0 w-full bg-slate-900 border-b border-white/10 p-6 flex flex-col gap-4 shadow-2xl max-h-[calc(100vh-80px)] overflow-y-auto">
           {navData.filter(item => !item.parent_id).sort((a, b) => a.order_index - b.order_index).map((menu) => (
             <React.Fragment key={menu.id}>
               <button 
                 onClick={() => menu.type !== 'dropdown' ? handleNavClick(menu.path) : (activeDropdown === menu.id ? setActiveDropdown(null) : setActiveDropdown(menu.id))}
-                className={`mobile-nav-link flex justify-between items-center ${activeDropdown === menu.id ? 'text-blue-400' : ''} ${menu.path === 'kas' ? 'text-blue-400 font-black' : ''}`}
+                className={`mobile-nav-link flex justify-between items-center ${activeDropdown === menu.id ? 'text-blue-400' : ''}`}
               >
-                <span className="flex items-center gap-2">
-                  {menu.path === 'kas' && <Wallet size={16} />}
-                  {menu.label}
-                </span>
+                <span className="flex items-center gap-2">{menu.label}</span>
                 {menu.type === 'dropdown' && <ChevronDown size={16} className={activeDropdown === menu.id ? 'rotate-180' : ''} />}
               </button>
               {menu.type === 'dropdown' && activeDropdown === menu.id && (
-                <div className="flex flex-col gap-4 pl-4 border-l-2 border-blue-500/30 ml-2 py-2 animate-in slide-in-from-left-2 duration-200">
+                <div className="flex flex-col gap-4 pl-4 border-l-2 border-blue-500/30 ml-2 py-2">
                   {getSubMenus(menu.id).map((sub) => (
-                    <button key={sub.id} onClick={() => handleNavClick(menu.path, sub.path)} className="mobile-sub-link hover:text-white transition-colors flex items-center justify-between pr-2">
-                      {sub.label}
-                      {sub.path === 'dokumen-penting' && <FileText size={14} className="text-blue-500" />}
+                    <button key={sub.id} onClick={() => handleNavClick(menu.path, sub.path)} className="mobile-sub-link flex items-center justify-between pr-2">
+                      <span className="flex items-center gap-2">
+                        {sub.path === 'quiz' && <BrainCircuit size={14} className="text-blue-400" />}
+                        {sub.label}
+                      </span>
+                      {sub.path === 'peringkat' && <Trophy size={14} className="text-yellow-500" />}
                     </button>
                   ))}
                 </div>
               )}
             </React.Fragment>
           ))}
-          <div className="h-px bg-white/5 my-2"></div>
-          <button onClick={() => handleNavClick('contact')} className="mobile-nav-link text-blue-400 flex items-center gap-3">
-            <MapPin size={18} /> Hubungi Kami
-          </button>
-          <button onClick={() => handleNavClick('register')} className="bg-blue-600 hover:bg-blue-500 p-4 rounded-2xl font-black uppercase text-[11px] text-center transition-all active:scale-95 shadow-lg shadow-blue-600/20">
-            Daftar Sekarang
-          </button>
         </div>
       )}
 
@@ -287,9 +302,8 @@ export default function Navbar({ onNavigate }: NavbarProps) {
         .dropdown-content { background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 1rem; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
         .dropdown-item { width: 100%; text-align: left; padding: 1rem 1.5rem; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #94a3b8; background: none; border-bottom: 1px solid rgba(255,255,255,0.05); transition: 0.2s; }
         .dropdown-item:hover { background: #2563eb; color: white; padding-left: 1.75rem; }
-        .mobile-nav-link { font-size: 14px; font-weight: 900; text-transform: uppercase; color: #f8fafc; font-style: italic; transition: all 0.2s; }
+        .mobile-nav-link { font-size: 14px; font-weight: 900; text-transform: uppercase; color: #f8fafc; font-style: italic; }
         .mobile-sub-link { text-align: left; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; padding: 4px 0; }
-        
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         @keyframes slideInFromTop { from { transform: translateY(-10px); } to { transform: translateY(0); } }
         .animate-in { animation: fadeIn 0.2s ease-out, slideInFromTop 0.2s ease-out; }
