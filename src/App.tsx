@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabase'; 
 
@@ -12,12 +12,13 @@ import About from './components/About';
 import News from './components/News';
 import Athletes from './components/Players'; 
 import Ranking from './components/Rankings'; 
+import BadmintonQuiz from './components/BadmintonQuiz'; // BARU: Teka-Teki Silang
 import Gallery from './components/Gallery';
 import RegistrationForm from './components/RegistrationForm'; 
 import Contact from './components/Contact'; 
 import Footer from './components/Footer';
 import PublicKasView from './components/PublicKasView';
-import DokumenPenting from './components/DokumenPenting'; // BARU: View Publik untuk Dokumen
+import DokumenPenting from './components/DokumenPenting'; 
 
 // Komponen yang tampil di depan (Landing Page)
 import StrukturOrganisasi from './components/StrukturOrganisasi'; 
@@ -43,7 +44,7 @@ import AdminPopup from './components/AdminPopup';
 import AdminFooter from './components/AdminFooter'; 
 import AdminAbout from './components/AdminAbout';
 import AdminStructure from './components/AdminStructure'; 
-import ManajemenDokumen from './components/ManajemenDokumen'; // BARU: Admin Kelola Dokumen
+import ManajemenDokumen from './components/ManajemenDokumen'; 
 
 import { KelolaSurat } from './components/KelolaSurat'; 
 import KasManager from './components/KasManager'; 
@@ -196,7 +197,7 @@ export default function App() {
   const [activeAthleteFilter, setActiveAthleteFilter] = useState('all');
   const [showStruktur, setShowStruktur] = useState(false); 
   const [showKas, setShowKas] = useState(false); 
-  const [showDokumen, setShowDokumen] = useState(false); // BARU: State untuk halaman Dokumen
+  const [showDokumen, setShowDokumen] = useState(false); 
 
   // --- AUDIO LOGIC ---
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -239,7 +240,6 @@ export default function App() {
   }, []);
 
   const handleNavigate = (sectionId: string, subPath?: string) => {
-    // Penanganan Navigasi Kas
     if (sectionId === 'kas') {
         setShowKas(true);
         setShowStruktur(false);
@@ -248,7 +248,6 @@ export default function App() {
         return;
     }
 
-    // Penanganan Navigasi Struktur
     if (sectionId === 'struktur' || subPath === 'organisasi' || sectionId === 'organization') {
         setShowStruktur(true);
         setShowKas(false);
@@ -257,7 +256,6 @@ export default function App() {
         return;
     }
 
-    // Penanganan Navigasi Dokumen Penting
     if (sectionId === 'dokumen-penting' || subPath === 'dokumen-penting') {
         setShowDokumen(true);
         setShowStruktur(false);
@@ -266,7 +264,6 @@ export default function App() {
         return;
     }
 
-    // Reset view khusus jika menavigasi ke section landing page biasa
     setShowStruktur(false);
     setShowKas(false);
     setShowDokumen(false);
@@ -351,6 +348,8 @@ export default function App() {
                     <Athletes initialFilter={activeAthleteFilter} />
                   </section>
                   <Ranking />
+                  {/* BARU: Teka-Teki Silang (TTS) Interaktif */}
+                  <BadmintonQuiz /> 
                   <Gallery />
                   <section id="register" className="py-20 bg-slate-900 w-full">
                     <RegistrationForm />
@@ -425,7 +424,7 @@ function AdminLayout({ session }: { session: any }) {
             <Route path="atlet" element={<ManajemenAtlet />} />
             <Route path="surat" element={<KelolaSurat />} />
             <Route path="kas" element={<KasManager />} />
-            <Route path="dokumen" element={<ManajemenDokumen />} /> {/* BARU: Route Kelola Dokumen */}
+            <Route path="dokumen" element={<ManajemenDokumen />} /> 
             <Route path="poin" element={<ManajemenPoin />} />
             <Route path="audit-poin" element={<AuditLogPoin />} />
             <Route path="skor" element={<AdminMatch />} />
