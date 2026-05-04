@@ -146,43 +146,60 @@ const Rankings: React.FC = () => {
     setLoading(true);
     setFetchError(null);
     try {
-      // 1. Ambil data rankings murni dari database (Single Source of Truth)
+      // 1. Ambil data dasar atlet dari tabel rankings
       const { data: rankingsData, error: rankingsError } = await supabase
         .from('rankings')
         .select('*')
         .order('total_points', { ascending: false });
-
+  
       if (rankingsError) throw rankingsError;
-
-      // 2. Ambil audit harian hanya untuk status (+/-) hari ini
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-
+  
+      // 2. Ambil SEMUA histori perubahan poin (bukan hanya hari ini)
+      // Ini untuk mensimulasikan "Added Points (Stats)" yang ada di Admin
       const { data: auditData, error: auditError } = await supabase
         .from('audit_poin')
-        .select('atlet_nama, perubahan')
-        .gte('created_at', startOfDay.toISOString());
-
+        .select('atlet_nama, perubahan, created_at');
+  
       if (auditError) throw auditError;
-
-      // 3. Merging: Gunakan total_points langsung dari tabel rankings agar identik dengan Admin
+  
+      // 3. Merging dengan kalkulasi total yang sama dengan Admin
       const mergedData = (rankingsData || []).map((player) => {
-        const dailyChange = (auditData || [])
+        // Hitung semua poin tambahan yang pernah masuk
+        const allAddedPoints = (auditData || [])
           .filter(
             (audit) =>
               audit.atlet_nama?.trim().toLowerCase() ===
               player.player_name?.trim().toLowerCase()
           )
           .reduce((sum, current) => sum + (current.perubahan || 0), 0);
-
+  
+        // Hitung khusus bonus hari ini untuk indikator status (+/-)
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        
+        const todayBonus = (auditData || [])
+          .filter(
+            (audit) =>
+              audit.atlet_nama?.trim().toLowerCase() === player.player_name?.trim().toLowerCase() &&
+              new Date(audit.created_at) >= startOfDay
+          )
+          .reduce((sum, current) => sum + (current.perubahan || 0), 0);
+  
+        // Gunakan logika yang sama dengan Admin: Base Points + Total Perubahan
+        // Pastikan 'total_points' di DB Anda adalah Base Points
+        const calculatedTotal = Number(player.total_points || 0) + allAddedPoints;
+  
         return { 
           ...player, 
-          total_points: Number(player.total_points || 0), 
-          bonus: dailyChange 
+          total_points: calculatedTotal, // Nilai yang akan ditampilkan di kolom 'Total Poin'
+          bonus: todayBonus // Nilai yang akan ditampilkan di kolom 'Status'
         };
       });
-
-      setDbRankings(mergedData);
+  
+      // Urutkan ulang berdasarkan hasil kalkulasi terbaru
+      const sortedData = mergedData.sort((a, b) => b.total_points - a.total_points);
+  
+      setDbRankings(sortedData);
     } catch (error: any) {
       console.error('Fetch Error:', error);
       setFetchError(error.message || 'Gagal sinkronisasi data');
