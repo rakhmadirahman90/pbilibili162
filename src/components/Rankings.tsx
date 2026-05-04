@@ -146,55 +146,41 @@ const Rankings: React.FC = () => {
     setLoading(true);
     setFetchError(null);
     try {
-      // 1. Ambil data Base Points dari tabel rankings
-      const { data: rankingsData, error: rankingsError } = await supabase
-        .from('rankings')
-        .select('*');
+      // 1. Ambil data langsung dari tabel atlet_stats sesuai instruksi
+      const { data: statsData, error: statsError } = await supabase
+        .from('atlet_stats') // Tabel sumber data poin yang benar
+        .select('player_name, total_points, category, seeded') // Sesuaikan kolom yang diperlukan
+        .order('total_points', { ascending: false });
   
-      if (rankingsError) throw rankingsError;
+      if (statsError) throw statsError;
   
-      // 2. Ambil SELURUH histori perubahan poin dari tabel audit
-      const { data: auditData, error: auditError } = await supabase
+      // 2. Ambil data dari audit_poin HANYA untuk indikator status (+/-) hari ini
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+  
+      const { data: auditData } = await supabase
         .from('audit_poin')
-        .select('atlet_nama, perubahan, created_at');
+        .select('atlet_nama, perubahan')
+        .gte('created_at', startOfDay.toISOString());
   
-      if (auditError) throw auditError;
-  
-      // 3. Gabungkan dan hitung nilai akhir
-      const mergedData = (rankingsData || []).map((player) => {
-        const playerNameClean = player.player_name?.trim().toLowerCase();
-  
-        // Hitung TOTAL Added Points dari awal sampai sekarang (untuk angka utama)
-        const totalAddedFromAudit = (auditData || [])
-          .filter(audit => audit.atlet_nama?.trim().toLowerCase() === playerNameClean)
-          .reduce((sum, item) => sum + (Number(item.perubahan) || 0), 0);
-  
-        // Hitung Added Points HARI INI saja (untuk indikator status +/-)
-        const today = new Date().toISOString().split('T')[0];
-        const todayBonus = (auditData || [])
-          .filter(audit => 
-            audit.atlet_nama?.trim().toLowerCase() === playerNameClean &&
-            audit.created_at.startsWith(today)
-          )
-          .reduce((sum, item) => sum + (Number(item.perubahan) || 0), 0);
-  
-        // RUMUS ADMIN: Base Points + Seluruh Added Points
-        // Contoh Mustakim: 14.355 + 560 = 14.915
-        const finalCalculatedPoints = Number(player.total_points || 0) + totalAddedFromAudit;
+      // 3. Mapping data untuk ditampilkan di UI
+      const mergedData = (statsData || []).map((player) => {
+        // Hitung bonus harian saja (tidak merubah total_points utama)
+        const dailyBonus = (auditData || [])
+          .filter(a => a.atlet_nama?.trim().toLowerCase() === player.player_name?.trim().toLowerCase())
+          .reduce((sum, current) => sum + (current.perubahan || 0), 0);
   
         return { 
           ...player, 
-          total_points: finalCalculatedPoints, // Ini yang akan tampil sebagai 14.915
-          bonus: todayBonus 
+          // Mengambil nilai murni dari kolom total_points di tabel atlet_stats
+          total_points: Number(player.total_points || 0), 
+          bonus: dailyBonus 
         };
       });
   
-      // 4. Urutkan berdasarkan total poin tertinggi (Rank #01)
-      const sortedData = mergedData.sort((a, b) => b.total_points - a.total_points);
-  
-      setDbRankings(sortedData);
+      setDbRankings(mergedData);
     } catch (error: any) {
-      console.error('Sync Error:', error);
+      console.error('Fetch Error:', error);
       setFetchError(error.message);
     } finally {
       setLoading(false);
