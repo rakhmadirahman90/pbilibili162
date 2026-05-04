@@ -146,15 +146,16 @@ const Rankings: React.FC = () => {
     setLoading(true);
     setFetchError(null);
     try {
-      // 1. Ambil data langsung dari tabel atlet_stats sesuai instruksi
+      // 1. Ambil data dari atlet_stats tanpa memanggil kolom 'category' atau 'seeded'
+      // Gunakan kolom yang benar-benar ada di database berdasarkan image_6593ab.jpg
       const { data: statsData, error: statsError } = await supabase
-        .from('atlet_stats') // Tabel sumber data poin yang benar
-        .select('player_name, total_points, category, seeded') // Sesuaikan kolom yang diperlukan
+        .from('atlet_stats')
+        .select('player_name, total_points') 
         .order('total_points', { ascending: false });
   
       if (statsError) throw statsError;
   
-      // 2. Ambil data dari audit_poin HANYA untuk indikator status (+/-) hari ini
+      // 2. Ambil data audit untuk indikator status harian
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
   
@@ -163,16 +164,18 @@ const Rankings: React.FC = () => {
         .select('atlet_nama, perubahan')
         .gte('created_at', startOfDay.toISOString());
   
-      // 3. Mapping data untuk ditampilkan di UI
+      // 3. Mapping data
       const mergedData = (statsData || []).map((player) => {
-        // Hitung bonus harian saja (tidak merubah total_points utama)
         const dailyBonus = (auditData || [])
           .filter(a => a.atlet_nama?.trim().toLowerCase() === player.player_name?.trim().toLowerCase())
           .reduce((sum, current) => sum + (current.perubahan || 0), 0);
   
         return { 
-          ...player, 
-          // Mengambil nilai murni dari kolom total_points di tabel atlet_stats
+          ...player,
+          // Karena kolom category/seeded tidak ada di atlet_stats, 
+          // kita set default atau biarkan kosong agar tidak error
+          category: 'SENIOR', 
+          seeded: '-',
           total_points: Number(player.total_points || 0), 
           bonus: dailyBonus 
         };
@@ -181,7 +184,7 @@ const Rankings: React.FC = () => {
       setDbRankings(mergedData);
     } catch (error: any) {
       console.error('Fetch Error:', error);
-      setFetchError(error.message);
+      setFetchError(error.message); // Ini yang memunculkan pesan merah di layar
     } finally {
       setLoading(false);
     }
