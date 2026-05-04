@@ -146,39 +146,46 @@ const Rankings: React.FC = () => {
     setLoading(true);
     setFetchError(null);
     try {
-      // Ambil data langsung dari tabel rankings tanpa kalkulasi ulang di frontend
+      // 1. Ambil data atlet (Isinya adalah Base Points: 14.355)
       const { data: rankingsData, error: rankingsError } = await supabase
         .from('rankings')
-        .select('*')
-        .order('total_points', { ascending: false });
+        .select('*');
   
       if (rankingsError) throw rankingsError;
   
-      // Ambil audit hanya untuk indikator "Status" (+/-) HARI INI saja
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-  
-      const { data: auditData } = await supabase
+      // 2. Ambil SEMUA histori poin tanpa filter waktu
+      const { data: auditData, error: auditError } = await supabase
         .from('audit_poin')
-        .select('atlet_nama, perubahan')
-        .gte('created_at', startOfDay.toISOString());
+        .select('atlet_nama, perubahan');
   
+      if (auditError) throw auditError;
+  
+      // 3. Merging data dengan rumus: Base + Total Audit
       const mergedData = (rankingsData || []).map((player) => {
-        // Bonus hanya untuk tampilan indikator hijau/merah di kolom Status
-        const dailyBonus = (auditData || [])
-          .filter(a => a.atlet_nama?.trim().toLowerCase() === player.player_name?.trim().toLowerCase())
-          .reduce((sum, current) => sum + (current.perubahan || 0), 0);
+        // Hitung total poin tambahan (Stats) dari tabel audit
+        const totalAddedPoints = (auditData || [])
+          .filter(audit => 
+            audit.atlet_nama?.trim().toLowerCase() === player.player_name?.trim().toLowerCase()
+          )
+          .reduce((sum, item) => sum + (Number(item.perubahan) || 0), 0);
+  
+        // Logika Admin: Base Points + Added Points
+        // Contoh Mustakim: 14.355 + 560 = 14.915
+        const finalTotal = Number(player.total_points || 0) + totalAddedPoints;
   
         return { 
           ...player, 
-          // JANGAN menambahkan player.total_points dengan auditData lagi di sini!
-          total_points: Number(player.total_points || 0), 
-          bonus: dailyBonus 
+          total_points: finalTotal, // Menampilkan 14.915
+          bonus: 0 // Anda bisa menambahkan filter tanggal jika ingin menampilkan status harian
         };
       });
   
-      setDbRankings(mergedData);
+      // 4. Urutkan berdasarkan total poin terbaru
+      const sortedData = mergedData.sort((a, b) => b.total_points - a.total_points);
+  
+      setDbRankings(sortedData);
     } catch (error: any) {
+      console.error('Error Sync:', error);
       setFetchError(error.message);
     } finally {
       setLoading(false);
