@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { supabase } from './supabase'; 
 
-// --- TAMBAHAN KODE: IMPORT FALLBACK DATA ---
+// --- IMPORT FALLBACK DATA ---
 import popupFallback from './data/konfigurasi_popup.json';
 
 // Import Komponen Landing Page
@@ -12,15 +12,13 @@ import About from './components/About';
 import News from './components/News';
 import Athletes from './components/Players'; 
 import Ranking from './components/Rankings'; 
-import BadmintonQuiz from './components/BadmintonQuiz'; // BARU: Teka-Teki Silang
+import BadmintonQuiz from './components/BadmintonQuiz'; 
 import Gallery from './components/Gallery';
 import RegistrationForm from './components/RegistrationForm'; 
 import Contact from './components/Contact'; 
 import Footer from './components/Footer';
 import PublicKasView from './components/PublicKasView';
 import DokumenPenting from './components/DokumenPenting'; 
-
-// Komponen yang tampil di depan (Landing Page)
 import StrukturOrganisasi from './components/StrukturOrganisasi'; 
 
 // Import Komponen Admin
@@ -45,11 +43,10 @@ import AdminFooter from './components/AdminFooter';
 import AdminAbout from './components/AdminAbout';
 import AdminStructure from './components/AdminStructure'; 
 import ManajemenDokumen from './components/ManajemenDokumen'; 
-
 import { KelolaSurat } from './components/KelolaSurat'; 
 import KasManager from './components/KasManager'; 
 
-import { X, ChevronLeft, ChevronRight, Menu, Zap, Download, ArrowUp, ExternalLink, Wallet, ArrowLeft, Music, Volume2, VolumeX, FileText } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Menu, Zap, Download, ExternalLink, Volume2, VolumeX, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // --- KONSTANTA AUDIO ---
@@ -99,134 +96,42 @@ function ImagePopup() {
     fetchActivePopups();
   }, []);
 
-  useEffect(() => {
-    let scrollInterval: any;
-    if (isOpen && scrollRef.current) {
-      const startTimeout = setTimeout(() => {
-        scrollInterval = setInterval(() => {
-          if (scrollRef.current) {
-            const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-            if (scrollTop + clientHeight >= scrollHeight - 2) {
-              clearInterval(scrollInterval);
-            } else {
-              scrollRef.current.scrollBy({ top: 1, behavior: 'auto' });
-            }
-          }
-        }, 45);
-      }, 3500);
-      return () => {
-        clearInterval(scrollInterval);
-        clearTimeout(startTimeout);
-      };
-    }
-  }, [isOpen, currentIndex]);
-
-  const renderCleanDescription = (text: string) => {
-    if (!text) return null;
-    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
-    return text.split('\n').map((line, i) => {
-      if (line.trim() === "") return <div key={i} className="h-4" />;
-      return (
-        <p key={i} className="mb-3 last:mb-0 leading-[1.8] text-slate-600 text-left tracking-normal" style={{ wordBreak: 'break-all', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap' }}>
-          {line.split(urlRegex).map((part, index) => {
-            if (part.match(urlRegex)) {
-              const cleanUrl = part.startsWith('www.') ? `https://${part}` : part;
-              return (
-                <a key={index} href={cleanUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline decoration-blue-300 underline-offset-4 font-bold inline transition-all">
-                  {part} <ExternalLink size={10} className="inline-block ml-1" />
-                </a>
-              );
-            }
-            return part;
-          })}
-        </p>
-      );
-    });
-  };
-
   const closePopup = () => setIsOpen(false);
   if (promoImages.length === 0 || !isOpen) return null;
   const current = promoImages[currentIndex];
-  if (!current) return null;
 
   return (
     <AnimatePresence mode="wait">
       <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
         <div className="absolute inset-0" onClick={closePopup} />
-        <motion.div key={current.id || `popup-${currentIndex}`} initial={{ opacity: 0, scale: 0.95, y: 30 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-[420px] max-h-[85vh] bg-white rounded-[2rem] shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden border border-white/20" onClick={(e) => e.stopPropagation()}>
-          <button onClick={closePopup} className="absolute top-4 right-4 z-50 p-2 bg-white/90 hover:bg-rose-500 hover:text-white text-slate-900 rounded-full shadow-lg transition-all active:scale-90 border border-slate-100"><X size={18} /></button>
-          <div ref={scrollRef} className="flex-1 overflow-y-auto hide-scrollbar scroll-smooth">
-            <div className="relative w-full aspect-[4/5] bg-slate-100">
-              <img src={current.url_gambar} className="w-full h-full object-cover" alt={current.judul} />
-              <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent opacity-60" />
-              {promoImages.length > 1 && (
-                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between px-3 z-20 pointer-events-none">
-                  <button onClick={() => { setCurrentIndex(prev => (prev === 0 ? promoImages.length - 1 : prev - 1)); scrollRef.current?.scrollTo(0,0); }} className="p-2 bg-white/20 hover:bg-white text-slate-900 rounded-full backdrop-blur-md pointer-events-auto transition-all shadow-md"><ChevronLeft size={20} /></button>
-                  <button onClick={() => { setCurrentIndex(prev => (prev === promoImages.length - 1 ? 0 : prev + 1)); scrollRef.current?.scrollTo(0,0); }} className="p-2 bg-white/20 hover:bg-white text-slate-900 rounded-full backdrop-blur-md pointer-events-auto transition-all shadow-md"><ChevronRight size={20} /></button>
-                </div>
-              )}
-            </div>
-            <div className="px-6 sm:px-8 pb-10 pt-4 bg-white relative">
-              <div className="flex justify-center mb-6">
-                <div className="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border border-blue-100"><Zap size={12} fill="currentColor" /> Pengumuman</div>
-              </div>
-              <h3 className="text-2xl font-black italic uppercase tracking-tighter mb-6 text-slate-900 leading-[1.1] text-center">{current.judul}</h3>
-              <div className="bg-slate-50 border border-slate-100 rounded-[1.5rem] p-6 mb-8 w-full min-w-0 overflow-hidden">
-                <div className="text-[13px] font-medium leading-relaxed w-full min-w-0">{renderCleanDescription(current.deskripsi)}</div>
-              </div>
-              <div className="space-y-3">
-                {current.file_url && current.file_url.length > 5 && (
-                  <motion.a whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }} href={current.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-3 w-full py-4.5 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] shadow-xl"><Download size={16} /> Download Lampiran</motion.a>
-                )}
-                <button onClick={closePopup} className="w-full py-4.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black uppercase text-[10px] tracking-[0.3em] transition-all shadow-[0_10px_20px_-5px_rgba(37,99,235,0.4)]">Saya Mengerti</button>
-              </div>
-            </div>
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-[420px] max-h-[85vh] bg-white rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border border-white/20" onClick={(e) => e.stopPropagation()}>
+          <button onClick={closePopup} className="absolute top-4 right-4 z-50 p-2 bg-white/90 hover:bg-rose-500 hover:text-white text-slate-900 rounded-full shadow-lg transition-all"><X size={18} /></button>
+          <div ref={scrollRef} className="flex-1 overflow-y-auto hide-scrollbar">
+             <img src={current.url_gambar} className="w-full h-auto object-cover" alt={current.judul} />
+             <div className="p-8">
+                <h3 className="text-xl font-black uppercase mb-4">{current.judul}</h3>
+                <p className="text-slate-600 text-sm leading-relaxed mb-6">{current.deskripsi}</p>
+                <button onClick={closePopup} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-widest text-[10px]">Tutup</button>
+             </div>
           </div>
         </motion.div>
       </div>
-      <style>{`.hide-scrollbar::-webkit-scrollbar { display: none !important; } .hide-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }`}</style>
     </AnimatePresence>
   );
 }
 
-// --- APP COMPONENT ---
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeAboutTab, setActiveAboutTab] = useState('sejarah');
   const [activeAthleteFilter, setActiveAthleteFilter] = useState('all');
-  const [showStruktur, setShowStruktur] = useState(false); 
-  const [showKas, setShowKas] = useState(false); 
-  const [showDokumen, setShowDokumen] = useState(false); 
 
-  // --- AUDIO LOGIC ---
+  // STATE UNTUK DEDICATED FULL-PAGE VIEWS
+  const [activeView, setActiveView] = useState<string | null>(null);
+
+  // AUDIO LOGIC
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [isMarsPlaying, setIsMarsPlaying] = useState(false);
-
-  useEffect(() => {
-    const startMars = () => {
-      if (audioRef.current && !isMarsPlaying) {
-        audioRef.current.volume = 0.4;
-        audioRef.current.play()
-          .then(() => setIsMarsPlaying(true))
-          .catch(() => console.log("Autoplay blocked."));
-      }
-    };
-
-    const handleFirstInteraction = () => {
-      startMars();
-      window.removeEventListener('click', handleFirstInteraction);
-      window.removeEventListener('touchstart', handleFirstInteraction);
-    };
-
-    window.addEventListener('click', handleFirstInteraction);
-    window.addEventListener('touchstart', handleFirstInteraction);
-
-    return () => {
-      window.removeEventListener('click', handleFirstInteraction);
-      window.removeEventListener('touchstart', handleFirstInteraction);
-    };
-  }, [isMarsPlaying]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -240,72 +145,46 @@ export default function App() {
   }, []);
 
   const handleNavigate = (sectionId: string, subPath?: string) => {
-    // 1. Logic for Dedicated Full-Page Views
-    if (sectionId === 'kas') {
-        setShowKas(true);
-        setShowStruktur(false);
-        setShowDokumen(false);
+    const fullPageMenus = ['kas', 'quiz', 'contact', 'kontak', 'struktur', 'dokumen-penting', 'register', 'pendaftaran', 'peringkat', 'rankings', 'atlet', 'players', 'tentang-kami', 'about', 'galeri', 'gallery'];
+
+    if (fullPageMenus.includes(sectionId)) {
+        if (sectionId === 'tentang-kami' || sectionId === 'about') {
+            if (subPath) setActiveAboutTab(subPath);
+        }
+        if (sectionId === 'atlet' || sectionId === 'players') {
+            if (subPath) setActiveAthleteFilter(subPath.toLowerCase());
+        }
+        
+        setActiveView(sectionId);
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
+    } else {
+        setActiveView(null);
+        setTimeout(() => {
+            const element = document.getElementById(sectionId);
+            if (element) {
+                const offset = 100;
+                window.scrollTo({ top: element.getBoundingClientRect().top + window.pageYOffset - offset, behavior: 'smooth' });
+            }
+        }, 100);
     }
-
-    if (sectionId === 'struktur' || subPath === 'organisasi' || sectionId === 'organization') {
-        setShowStruktur(true);
-        setShowKas(false);
-        setShowDokumen(false);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-    }
-
-    if (sectionId === 'dokumen-penting' || subPath === 'dokumen-penting') {
-        setShowDokumen(true);
-        setShowStruktur(false);
-        setShowKas(false);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-    }
-
-    // 2. Logic for Landing Page Sections
-    setShowStruktur(false);
-    setShowKas(false);
-    setShowDokumen(false);
-
-    if (sectionId === 'tentang-kami' || ['sejarah', 'visi-misi', 'fasilitas'].includes(subPath || '')) {
-      if (subPath) setActiveAboutTab(subPath);
-    }
-    
-    if (sectionId === 'atlet' || sectionId === 'players') {
-      const filterValue = subPath ? subPath.toLowerCase() : 'all';
-      setActiveAthleteFilter(filterValue);
-      window.dispatchEvent(new CustomEvent('filterAtlet', { detail: filterValue }));
-    }
-
-    // 3. Precise Scrolling Logic
-    setTimeout(() => {
-      // Mapping logic for specific IDs from image_585638.jpg
-      let targetId = subPath || sectionId;
-      if (sectionId === 'atlet' || sectionId === 'players') targetId = 'atlet-section';
-      if (sectionId === 'peringkat' || subPath === 'peringkat') targetId = 'peringkat-section';
-      if (sectionId === 'quiz' || subPath === 'quiz') targetId = 'quiz-section';
-      if (sectionId === 'berita') targetId = 'berita-section';
-
-      const element = document.getElementById(targetId);
-      if (element) {
-        const offset = 100; 
-        const bodyRect = document.body.getBoundingClientRect().top;
-        const elementRect = element.getBoundingClientRect().top;
-        const offsetPosition = (elementRect - bodyRect) - offset;
-        window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
-      }
-    }, 150);
   };
 
+  const BackToHomeButton = () => (
+    <motion.button 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ scale: 1.05, backgroundColor: '#2563eb' }}
+      whileTap={{ scale: 0.95 }}
+      onClick={() => { setActiveView(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+      className="fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-blue-600 text-white rounded-full font-black text-[11px] tracking-[0.3em] shadow-[0_20px_50px_rgba(37,99,235,0.4)] z-[9999] uppercase flex items-center gap-3 border border-white/20 backdrop-blur-md"
+    >
+      <ArrowLeft size={16} /> Kembali ke Beranda
+    </motion.button>
+  );
+
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0F172A]">
-        <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-white font-black italic uppercase tracking-widest text-[10px]">Loading System...</p>
-        </div>
+    <div className="min-h-screen flex items-center justify-center bg-[#0b0e14]">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
     </div>
   );
 
@@ -316,19 +195,19 @@ export default function App() {
       
       <Routes>
         <Route path="/" element={
-          <div className="min-h-screen bg-white selection:bg-blue-600 selection:text-white w-full overflow-x-hidden">
+          <div className="min-h-screen bg-[#0b0e14] w-full overflow-x-hidden">
             <ImagePopup />
             <Navbar onNavigate={handleNavigate} />
             
-            {/* FLOATING MUSIC CONTROLLER */}
+            {/* MUSIC CONTROLLER */}
             <div className="fixed bottom-6 right-6 z-[99999] flex flex-col items-end gap-3 pointer-events-none">
                 <AnimatePresence>
                   {isMarsPlaying && (
-                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="bg-white/90 backdrop-blur-md border border-slate-200 px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3">
-                        <div className="flex gap-1">
-                           {[1,2,3,4].map(i => <motion.div key={i} animate={{ height: [4, 12, 4] }} transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.1 }} className="w-1 bg-blue-600 rounded-full" />)}
+                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="bg-slate-900/90 backdrop-blur-md border border-white/10 px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3">
+                        <div className="flex gap-0.5">
+                           {[1,2,3,4].map(i => <motion.div key={i} animate={{ height: [4, 12, 4] }} transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.1 }} className="w-1 bg-blue-500 rounded-full" />)}
                         </div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-800 italic">Mars PB 162 Playing</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-white italic">Mars PB 162</p>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -336,92 +215,71 @@ export default function App() {
                   whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
                   onClick={() => {
                     if (audioRef.current) {
-                      if (isMarsPlaying) audioRef.current.pause();
-                      else audioRef.current.play();
+                      isMarsPlaying ? audioRef.current.pause() : audioRef.current.play();
                       setIsMarsPlaying(!isMarsPlaying);
                     }
                   }}
-                  className="pointer-events-auto w-14 h-14 bg-slate-900 text-white rounded-full shadow-2xl flex items-center justify-center border border-white/10 group overflow-hidden relative"
+                  className="pointer-events-auto w-14 h-14 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center border border-white/20 group overflow-hidden"
                 >
-                  <div className="absolute inset-0 bg-gradient-to-tr from-blue-600 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                  {isMarsPlaying ? <Volume2 size={20} className="relative z-10" /> : <VolumeX size={20} className="relative z-10 text-slate-400" />}
+                  {isMarsPlaying ? <Volume2 size={20} /> : <VolumeX size={20} className="text-white/60" />}
                 </motion.button>
             </div>
 
             <AnimatePresence mode="wait">
-              {!showStruktur && !showKas && !showDokumen ? (
+              {!activeView ? (
                 <motion.div key="landing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full">
                   <Hero />
-                  <section id="tentang-kami">
-                    <About activeTab={activeAboutTab} onTabChange={(id) => setActiveAboutTab(id)} />
-                  </section>
-                  <section id="berita-section">
-                    <News />
-                  </section>
-                  <section id="atlet-section">
-                    <Athletes initialFilter={activeAthleteFilter} />
-                  </section>
-                  <section id="peringkat-section">
-                    <Ranking />
-                  </section>
-                  <section id="quiz-section">
-                    <BadmintonQuiz /> 
-                  </section>
-                  <section id="galeri">
-                    <Gallery />
-                  </section>
-                  <section id="register" className="py-20 bg-slate-900 w-full">
-                    <RegistrationForm />
-                  </section>
-                  <section id="contact">
-                    <Contact />
-                  </section>
-                </motion.div>
-              ) : showStruktur ? (
-                <motion.div key="struktur" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="pt-24 bg-slate-50 min-h-screen w-full">
-                  <StrukturOrganisasi />
-                  <motion.button 
-                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                    onClick={() => { setShowStruktur(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                    className="fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-slate-900 text-white rounded-full font-black text-[11px] tracking-[0.2em] shadow-2xl z-50 uppercase flex items-center gap-3 border border-white/10"
-                  >
-                    <ArrowLeft size={16} /> Kembali ke Beranda
-                  </motion.button>
-                </motion.div>
-              ) : showKas ? (
-                <motion.div key="kas-view" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="pt-32 pb-20 bg-slate-50 min-h-screen w-full">
-                  <div id="kas-section">
-                    <PublicKasView />
-                  </div>
-                  <motion.button 
-                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                    onClick={() => { setShowKas(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                    className="fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-blue-600 text-white rounded-full font-black text-[11px] tracking-[0.2em] shadow-2xl z-50 uppercase flex items-center gap-3 border border-white/10"
-                  >
-                    <ArrowLeft size={16} /> Kembali ke Beranda
-                  </motion.button>
+                  <section id="berita-section"><News /></section>
                 </motion.div>
               ) : (
-                <motion.div key="dokumen-view" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="bg-slate-50 min-h-screen w-full">
-                  <div id="dokumen-section">
-                    <DokumenPenting />
+                /* DEDICATED FULL-PAGE VIEW DENGAN DARK MODE KONSISTEN */
+                <motion.div 
+                  key="dedicated-view"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.4 }}
+                  className="min-h-screen w-full flex flex-col items-center bg-[#0b0e14] pt-24 pb-32"
+                >
+                  <div className="w-full h-full max-w-7xl px-4 md:px-8 mx-auto">
+                    {/* Render Komponen dengan Props masing-masing */}
+                    {activeView === 'kas' && <PublicKasView />}
+                    {(activeView === 'quiz') && <BadmintonQuiz />}
+                    {(activeView === 'contact' || activeView === 'kontak') && <Contact />}
+                    {activeView === 'struktur' && <StrukturOrganisasi />}
+                    {activeView === 'dokumen-penting' && <DokumenPenting />}
+                    {(activeView === 'register' || activeView === 'pendaftaran') && <RegistrationForm />}
+                    {(activeView === 'peringkat' || activeView === 'rankings') && <Ranking />}
+                    {(activeView === 'atlet' || activeView === 'players') && <Athletes initialFilter={activeAthleteFilter} />}
+                    {(activeView === 'tentang-kami' || activeView === 'about') && <About activeTab={activeAboutTab} onTabChange={setActiveAboutTab} />}
+                    {(activeView === 'galeri' || activeView === 'gallery') && <Gallery />}
                   </div>
-                  <motion.button 
-                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-                    onClick={() => { setShowDokumen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                    className="fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-slate-900 text-white rounded-full font-black text-[11px] tracking-[0.2em] shadow-2xl z-50 uppercase flex items-center gap-3 border border-white/10"
-                  >
-                    <ArrowLeft size={16} /> Kembali ke Beranda
-                  </motion.button>
+                  
+                  <BackToHomeButton />
                 </motion.div>
               )}
             </AnimatePresence>
+            
             <Footer />
           </div>
         } />
+
         <Route path="/login" element={!session ? <Login /> : <Navigate to="/admin/dashboard" replace />} />
         <Route path="/admin/*" element={session ? <AdminLayout session={session} /> : <Navigate to="/login" replace />} />
       </Routes>
+      <style>{`
+        /* Menghilangkan scrollbar tapi fungsi scroll tetap ada */
+        .hide-scrollbar::-webkit-scrollbar { display: none !important; }
+        .hide-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }
+        
+        /* Custom scrollbar untuk panel admin */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #050505; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+        
+        /* Global Background Smoothness */
+        body { background-color: #0b0e14; }
+      `}</style>
     </Router>
   );
 }
