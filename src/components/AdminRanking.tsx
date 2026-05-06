@@ -67,7 +67,6 @@ export default function AdminRanking() {
   });
 
   // --- LOGIKA SINKRONISASI DATA ---
-  // Fungsi ini menarik data dari pendaftaran & atlet_stats lalu memasukkannya ke rankings
   const autoSyncData = useCallback(async () => {
     try {
       const { data: statsData, error: statsError } = await supabase
@@ -123,16 +122,16 @@ export default function AdminRanking() {
     }
   }, []);
 
+  // --- PERBAIKAN FETCH DENGAN SORTING TOTAL_POINTS ---
   const fetchRankings = useCallback(async () => {
     setLoading(true);
     try {
-      // Jalankan sinkronisasi sebelum fetch agar data terbaru
       await autoSyncData();
       
       const { data, error } = await supabase
         .from('rankings')
         .select('*')
-        .order('total_points', { ascending: false });
+        .order('total_points', { ascending: false }); // Urutan Poin Terbesar ke Terkecil[cite: 1]
 
       if (error) throw error;
       setRankings(data || []);
@@ -146,17 +145,19 @@ export default function AdminRanking() {
   useEffect(() => {
     fetchRankings();
     
-    // Realtime Listener pada atlet_stats karena ini sumber perubahan poin utama
     const channel = supabase
       .channel('realtime_rankings')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'atlet_stats' }, () => {
         fetchRankings();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rankings' }, () => {
-        // Jika ada perubahan manual di table rankings
-        const { data } = supabase.from('rankings').select('*').order('total_points', { ascending: false }).then(res => {
+        // Refresh otomatis dengan sorting terbaru jika ada perubahan manual[cite: 1]
+        supabase.from('rankings')
+          .select('*')
+          .order('total_points', { ascending: false })
+          .then(res => {
             if(res.data) setRankings(res.data);
-        });
+          });
       })
       .subscribe();
 
@@ -176,7 +177,7 @@ export default function AdminRanking() {
       const cleanName = formData.player_name.trim().toUpperCase();
       const base = Number(formData.poin) || 0;
       const bonus = Number(formData.bonus) || 0;
-      const calculatedTotal = base + bonus;
+      const calculatedTotal = base + bonus; // Kalkulasi total poin[cite: 1]
       
       const payload = {
         player_name: cleanName,
@@ -190,14 +191,12 @@ export default function AdminRanking() {
         pendaftaran_id: formData.pendaftaran_id 
       };
 
-      // 1. Update/Insert di Tabel Rankings
       const { error: rankError } = editingId 
         ? await supabase.from('rankings').update(payload).eq('id', editingId)
         : await supabase.from('rankings').upsert([payload], { onConflict: 'player_name' });
 
       if (rankError) throw rankError;
 
-      // 2. Sinkronkan kembali ke Tabel atlet_stats jika pendaftaran_id tersedia
       if (formData.pendaftaran_id) {
         let dbSeed = formData.seed?.replace('Seed ', '') || 'Non-Seed';
         const { error: statsError } = await supabase
@@ -226,16 +225,24 @@ export default function AdminRanking() {
   };
 
   // --- LOGIKA FILTER & PAGINATION ---
-  const filteredRankings = rankings.filter((r) => {
+  const filteredRankings = rankings
+  .filter((r) => {
     const matchSearch = (r.player_name || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchSeed = selectedSeed === 'Semua' || r.seed === selectedSeed;
     const matchCategory = selectedCategory === 'Semua' || r.category === selectedCategory;
     return matchSearch && matchSeed && matchCategory;
+  })
+  // TAMBAHKAN LOGIKA SORTING DI BAWAH INI
+  .sort((a, b) => {
+    const totalA = (Number(a.poin) || 0) + (Number(a.bonus) || 0);
+    const totalB = (Number(b.poin) || 0) + (Number(b.bonus) || 0);
+    return totalB - totalA; // Urutkan dari yang terbesar ke terkecil
   });
 
-  const totalPages = Math.ceil(filteredRankings.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedRankings = filteredRankings.slice(startIndex, startIndex + itemsPerPage);
+// Bagian pagination akan otomatis mengikuti urutan sorting di atas
+const totalPages = Math.ceil(filteredRankings.length / itemsPerPage);
+const startIndex = (currentPage - 1) * itemsPerPage;
+const paginatedRankings = filteredRankings.slice(startIndex, startIndex + itemsPerPage);
 
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages) setCurrentPage(page);
@@ -363,7 +370,7 @@ export default function AdminRanking() {
           </select>
         </div>
 
-        {/* TABLE */}
+        {/* TABLE DENGAN PERINGKAT TERBARU */}
         <div className="bg-zinc-900/20 border border-white/5 rounded-3xl overflow-hidden shadow-2xl animate-in fade-in duration-700">
           <div className="overflow-x-auto">
             <table className="w-full text-left min-w-[1000px]">
@@ -439,7 +446,7 @@ export default function AdminRanking() {
             </table>
           </div>
 
-          {/* PAGINATION CONTROLS */}
+          {/* PAGINATION */}
           {!loading && totalPages > 1 && (
             <div className="p-6 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 bg-white/[0.01]">
               <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
@@ -477,8 +484,7 @@ export default function AdminRanking() {
         <div className="mt-8 flex items-center gap-3 bg-blue-600/5 border border-blue-600/10 p-4 rounded-2xl">
             <Info className="text-blue-500" size={20} />
             <p className="text-[10px] text-zinc-400 font-medium">
-                Sistem ini secara otomatis menggabungkan **Base Points** (Poin dasar pendaftaran) dengan **Added Points** (Poin dari aktivitas/prestasi di atlet_stats). 
-                Gunakan tombol **Sync** jika data tidak langsung diperbarui.
+                Sistem ini secara otomatis menggabungkan **Base Points** dengan **Added Points** dan mengurutkannya berdasarkan poin tertinggi[cite: 1].
             </p>
         </div>
       </div>
@@ -502,7 +508,6 @@ export default function AdminRanking() {
                   </div>
               )}
 
-              {/* Foto Upload */}
               <div className="flex items-center gap-4 p-4 bg-white/[0.02] border border-white/5 rounded-3xl">
                 <div className="w-20 h-20 bg-zinc-900 rounded-2xl overflow-hidden flex items-center justify-center border border-white/5">
                   {formData.photo_url ? <img src={formData.photo_url} className="w-full h-full object-cover" alt="" /> : <Camera className="text-zinc-700" />}
@@ -567,7 +572,7 @@ export default function AdminRanking() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-black text-zinc-500 uppercase ml-2">Base Points (Pendaftaran)</label>
+                    <label className="text-[10px] font-black text-zinc-500 uppercase ml-2">Base Points</label>
                     <input type="number" className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 font-bold focus:border-blue-500" value={formData.poin} onChange={(e) => setFormData({ ...formData, poin: Number(e.target.value) })} />
                   </div>
                   <div className="space-y-1">
@@ -598,7 +603,6 @@ export default function AdminRanking() {
         </div>
       )}
 
-      {/* CUSTOM SCROLLBAR FOR MODAL */}
       <style>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
