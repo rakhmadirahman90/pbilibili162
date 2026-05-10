@@ -21,15 +21,36 @@ export function KelolaSurat() {
   const [stempelPos, setStempelPos] = useState({ x: -40, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
 
-  // --- KODE BARU: FUNGSI UNTUK GENERATE & UPLOAD PDF KE WHATSAPP ---
- const handleSendWhatsApp = async (surat: any) => {
-    // 1. Jika modal belum terbuka, buka modal dulu agar printRef ter-render
+  const defaultForm = {
+    nomor_surat: '',
+    lampiran: '-',
+    perihal: 'Permohonan Menjadi Narasumber (Penceramah) Kajian Ramadan Online',
+    tempat_tanggal: `Parepare, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+    tujuan_yth: 'Al Hafidz Ustadz Prof. Dr. KH. Muamar Bakry, Lc., M.A',
+    jabatan_tujuan: 'Rektor UIM Al-Ghazali Makassar',
+    isi_surat: `Segala puji bagi Allah SWT atas segala nikmat dan karunia-Nya yang senantiasa menyertai aktivitas kita. Shalawat serta salam semoga tetap tercurah kepada teladan kita Nabi Muhammad SAW, keluarga, serta para sahabatnya.
+
+Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bulan suci Ramadan 1447 H, kami dari PB Bilibili 162 bermaksud menyelenggarakan kegiatan kajian rutin secara daring. Mengingat kapasitas keilmuan dan ketokohan Bapak, kami dengan kerendahan hati memohon kesediaan Bapak untuk menjadi narasumber pada kegiatan tersebut.`,
+    hari_tanggal: 'Jumat, 27 Februari 2026',
+    waktu: '05.30 - 06.30 WITA',
+    tempat_kegiatan: 'Virtual Meeting Zoom',
+    tema: 'Ramadan sebagai Madrasah Integritas dan Spiritual',
+    nama_ketua: 'H. Wawan',
+    nama_sekretaris: 'H. Barhaman Muin S.Ag',
+    logo_url: '', 
+    ttd_ketua_url: '', 
+    ttd_sekretaris_url: '',
+    cap_stempel_url: ''    
+  };
+
+  const [formData, setFormData] = useState(defaultForm);
+
+  const handleSendWhatsApp = async (surat: any) => {
     if (!isModalOpen || formData.id !== surat.id) {
       setFormData(surat);
       setIsModalOpen(true);
       setIsPreviewOnly(true);
       
-      // Berikan jeda singkat (delay) agar browser sempat merender elemen pratinjau
       setTimeout(() => {
         processWhatsAppPDF(surat);
       }, 500);
@@ -38,17 +59,12 @@ export function KelolaSurat() {
     }
   };
 
-  // Fungsi inti untuk memproses PDF dan Upload
   const processWhatsAppPDF = async (surat: any) => {
     setIsSubmitting(true);
-    
     try {
       const element = printRef.current;
-      if (!element) {
-        throw new Error("Elemen pratinjau surat tidak ditemukan. Coba buka pratinjau terlebih dahulu.");
-      }
+      if (!element) throw new Error("Elemen pratinjau surat tidak ditemukan.");
 
-      // Menunggu gambar/logo dimuat sempurna
       await new Promise(resolve => setTimeout(resolve, 300));
 
       const canvas = await html2canvas(element, {
@@ -56,7 +72,6 @@ export function KelolaSurat() {
         useCORS: true,
         logging: false,
         backgroundColor: "#ffffff",
-        // Penting: Pastikan elemen terlihat di viewport saat render
         windowWidth: element.scrollWidth,
         windowHeight: element.scrollHeight
       });
@@ -84,11 +99,12 @@ export function KelolaSurat() {
         .from('surat-pdf')
         .getPublicUrl(fileName);
 
-      const message = `*UNDANGAN NARASUMBER - PB BILIBILI 162*\n\n` +
+      // PERBAIKAN DI SINI: Menggunakan surat.jabatan_tujuan agar dinamis sesuai inputan
+      const message = `*UNDANGAN RESMI - PB BILIBILI 162*\n\n` +
         `Yth. *${surat.tujuan_yth}*\n` + 
         `${surat.jabatan_tujuan || ''}\n\n` +
         `Assalamu'alaikum Wr. Wb.\n` +
-        `Berikut kami lampirkan surat resmi permohonan narasumber yang dapat diunduh melalui tautan di bawah ini:\n\n` +
+        `Berikut kami lampirkan surat resmi terkait *${surat.perihal}* yang dapat diunduh melalui tautan di bawah ini:\n\n` +
         `🔗 *Link Download Surat:* \n${publicUrl}\n\n` +
         `Terima kasih.\n*Admin PB Bilibili 162*`;
 
@@ -105,7 +121,6 @@ export function KelolaSurat() {
           window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
         }
       });
-
     } catch (error: any) {
       console.error("Gagal:", error);
       Swal.fire('Error', error.message, 'error');
@@ -113,30 +128,6 @@ export function KelolaSurat() {
       setIsSubmitting(false);
     }
   };
-
-  const defaultForm = {
-    nomor_surat: '',
-    lampiran: '-',
-    perihal: 'Permohonan Menjadi Narasumber (Penceramah) Kajian Ramadan Online',
-    tempat_tanggal: `Parepare, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`,
-    tujuan_yth: 'Al Hafidz Ustadz Prof. Dr. KH. Muamar Bakry, Lc., M.A',
-    jabatan_tujuan: 'Rektor UIM Al-Ghazali Makassar',
-    isi_surat: `Segala puji bagi Allah SWT atas segala nikmat dan karunia-Nya yang senantiasa menyertai aktivitas kita. Shalawat serta salam semoga tetap tercurah kepada teladan kita Nabi Muhammad SAW, keluarga, serta para sahabatnya.
-
-Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bulan suci Ramadan 1447 H, kami dari PB Bilibili 162 bermaksud menyelenggarakan kegiatan kajian rutin secara daring. Mengingat kapasitas keilmuan dan ketokohan Bapak, kami dengan kerendahan hati memohon kesediaan Bapak untuk menjadi narasumber pada kegiatan tersebut.`,
-    hari_tanggal: 'Jumat, 27 Februari 2026',
-    waktu: '05.30 - 06.30 WITA',
-    tempat_kegiatan: 'Virtual Meeting Zoom',
-    tema: 'Ramadan sebagai Madrasah Integritas dan Spiritual',
-    nama_ketua: 'H. Wawan',
-    nama_sekretaris: 'H. Barhaman Muin S.Ag',
-    logo_url: '', 
-    ttd_ketua_url: '', 
-    ttd_sekretaris_url: '',
-    cap_stempel_url: ''    
-  };
-
-  const [formData, setFormData] = useState(defaultForm);
 
   const fetchSurat = async () => {
     setLoading(true);
@@ -154,17 +145,24 @@ Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bu
   const prepareNewSurat = () => {
     setEditId(null);
     setIsPreviewOnly(false);
-    setStempelPos({ x: -40, y: 0 }); // Reset posisi stempel
+    setStempelPos({ x: -40, y: 0 });
+
     if (suratList.length > 0) {
       const lastSurat = suratList[0];
       const lastNomor = lastSurat.nomor_surat.split('/')[0];
       const nextNumber = (parseInt(lastNomor) + 1).toString().padStart(3, '0');
-      const newFullNomor = `${nextNumber}${lastSurat.nomor_surat.substring(3)}`;
+      const suffix = lastSurat.nomor_surat.substring(3);
+      const newFullNomor = `${nextNumber}${suffix}`;
 
       setFormData({
-        ...lastSurat,
+        ...defaultForm,
         nomor_surat: newFullNomor,
-        tempat_tanggal: `Parepare, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`,
+        logo_url: lastSurat.logo_url,
+        ttd_ketua_url: lastSurat.ttd_ketua_url,
+        ttd_sekretaris_url: lastSurat.ttd_sekretaris_url,
+        cap_stempel_url: lastSurat.cap_stempel_url,
+        nama_ketua: lastSurat.nama_ketua,
+        nama_sekretaris: lastSurat.nama_sekretaris
       });
     } else {
       setFormData({ ...defaultForm, nomor_surat: '001/PB-Bilibili162/II/2026' });
@@ -292,7 +290,6 @@ Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bu
 
   return (
     <div className="p-6 md:p-10 text-white max-w-7xl mx-auto min-h-screen font-sans">
-      {/* HEADER SECTION */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
         <div className="flex items-center gap-4">
           <div className="p-3 bg-blue-600/20 rounded-2xl text-blue-500"><Mail size={32} /></div>
@@ -306,7 +303,6 @@ Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bu
         </button>
       </div>
 
-      {/* SEARCH & TABLE SECTION */}
       <div className="bg-white/5 border border-white/10 rounded-[2.5rem] overflow-hidden">
         <div className="p-6 border-b border-white/10">
             <div className="relative">
@@ -348,12 +344,10 @@ Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bu
         </div>
       </div>
 
-      {/* MODAL EDITOR & PREVIEW */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/95 backdrop-blur-md overflow-y-auto">
           <div className="bg-[#0F172A] border border-white/10 w-full max-w-[95%] h-[90vh] rounded-[2.5rem] flex flex-col md:flex-row overflow-hidden shadow-2xl">
             
-            {/* FORM INPUT (LEFT SIDE) */}
             {!isPreviewOnly && (
               <div className="w-full md:w-1/3 p-6 overflow-y-auto border-r border-white/5 space-y-4 custom-scrollbar">
                 <div className="flex justify-between items-center border-b border-white/10 pb-4">
@@ -400,6 +394,8 @@ Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bu
                   </div>
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Tujuan (Yth)</label>
                   <input type="text" className="w-full p-2.5 bg-white/5 border border-white/10 rounded-lg text-xs" value={formData.tujuan_yth} onChange={(e)=>setFormData({...formData, tujuan_yth: e.target.value})} />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Jabatan Tujuan</label>
+                  <input type="text" className="w-full p-2.5 bg-white/5 border border-white/10 rounded-lg text-xs" value={formData.jabatan_tujuan} onChange={(e)=>setFormData({...formData, jabatan_tujuan: e.target.value})} />
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Perihal</label>
                   <textarea className="w-full p-2.5 bg-white/5 border border-white/10 rounded-lg text-xs h-16" value={formData.perihal} onChange={(e)=>setFormData({...formData, perihal: e.target.value})} />
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Isi Paragraf</label>
@@ -418,9 +414,7 @@ Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bu
               </div>
             )}
 
-            {/* LIVE PREVIEW (RIGHT SIDE) */}
             <div className={`flex-1 bg-slate-800 p-8 overflow-y-auto custom-scrollbar relative`} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
-              {/* ACTION BUTTONS ON PREVIEW */}
               <div className="absolute top-6 right-10 flex gap-3 z-50 no-print">
                   <button onClick={() => handleSendWhatsApp(formData)} disabled={isSubmitting} className="px-4 py-2 bg-green-600 rounded-lg font-bold text-xs flex items-center gap-2 shadow-xl hover:bg-green-500 transition-all disabled:opacity-50">
                     {isSubmitting ? <Loader2 size={14} className="animate-spin"/> : <MessageCircle size={14}/>} Kirim Link WA
@@ -429,9 +423,7 @@ Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bu
                   <button onClick={() => setIsModalOpen(false)} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg transition-all"><X size={20}/></button>
               </div>
 
-              {/* THE ACTUAL LETTER DOCUMENT */}
               <div ref={printRef} className="bg-white text-black p-[1.5cm] mx-auto w-[21cm] min-h-[29.7cm] shadow-2xl font-serif text-[11pt] leading-relaxed relative overflow-hidden">
-                {/* KOP SURAT */}
                 <div className="flex items-center border-b-[4px] border-black pb-2 mb-6">
                   <div className="w-24 h-24 flex-shrink-0 flex items-center justify-center mr-4 overflow-hidden">
                     {formData.logo_url ? (
@@ -447,7 +439,6 @@ Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bu
                   </div>
                 </div>
 
-                {/* INFO SURAT */}
                 <div className="flex justify-between items-start mb-6">
                     <div className="flex-1">
                         <p>Nomor : {formData.nomor_surat}</p>
@@ -459,41 +450,27 @@ Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bu
                     </div>
                 </div>
 
-                {/* TUJUAN */}
                 <div className="mb-6">
                     <p>Kepada Yth.</p>
                     <p className="font-bold">{formData.tujuan_yth}</p>
-                    <p>{formData.jabatan_tujuan}</p>
+                    {/* PERBAIKAN DI SINI: Jabatan dinamis sesuai input, bukan tulisan tetap */}
+                    {formData.jabatan_tujuan && <p>{formData.jabatan_tujuan}</p>}
                     <p>Di - Tempat</p>
                 </div>
 
-                {/* ISI SURAT */}
                 <div className="space-y-4 text-justify">
                     <p>Assalamu'alaikum Warahmatullahi Wabarakatuh,</p>
                     <p className="font-bold">Dengan hormat,</p>
                     <p className="whitespace-pre-line">{formData.isi_surat}</p>
-                    
-                    <div className="pl-8 space-y-1">
-                        <p>Hari/Tanggal : {formData.hari_tanggal}</p>
-                        <p>Waktu : {formData.waktu}</p>
-                        <p>Tempat : {formData.tempat_kegiatan}</p>
-                        <p>Tema : "{formData.tema}"</p>
-                    </div>
-
-                    <p>Demikian permohonan ini kami sampaikan. Atas perhatian, perkenan, dan kerja sama Bapak, kami ucapkan terima kasih yang sebesar-besarnya. Jazakumullahu khairan katsiran.</p>
-                    <p>Wassalamu'alaikum Warahmatullahi Wabarakatuh.</p>
                 </div>
 
-                {/* TANDA TANGAN & STEMPEL */}
                 <div className="mt-12 flex justify-between px-10 relative">
-                    {/* KETUA */}
                     <div className="text-center w-48 relative">
                         <p className="mb-16">Ketua,</p>
                         {formData.ttd_ketua_url && (
                             <img src={formData.ttd_ketua_url} alt="TTD Ketua" className="absolute top-6 left-1/2 -translate-x-1/2 h-20 object-contain mix-blend-multiply" />
                         )}
                         
-                        {/* STEMPEL (DRAGGABLE) */}
                         {formData.cap_stempel_url && (
                             <div 
                                 onMouseDown={handleMouseDown}
@@ -511,7 +488,6 @@ Dalam rangka menyemarakkan syiar Islam dan memperdalam pemahaman keagamaan di bu
                         <p className="font-bold underline uppercase">{formData.nama_ketua}</p>
                     </div>
 
-                    {/* SEKRETARIS */}
                     <div className="text-center w-48 relative">
                         <p className="mb-16">Sekretaris,</p>
                         {formData.ttd_sekretaris_url && (
