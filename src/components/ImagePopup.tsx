@@ -1,7 +1,3 @@
-/**
- * FIXED POPUP COMPONENT (V5 - FINAL PRECISION)
- * Fokus: Perbaikan spasi antar baris, link wrapping, dan margin kontainer.
- */
 function ImagePopup() {
   const [isOpen, setIsOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -28,7 +24,6 @@ function ImagePopup() {
     fetchActivePopups();
   }, []);
 
-  // Logika Autoscroll yang lebih halus
   useEffect(() => {
     let scrollInterval: any;
     if (isOpen && scrollRef.current) {
@@ -52,21 +47,21 @@ function ImagePopup() {
     }
   }, [isOpen, currentIndex]);
 
+  // --- PERBAIKAN LOGIKA TEXT RENDER ---
   const renderCleanDescription = (text: string) => {
     if (!text) return null;
     const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
 
     return text.split('\n').map((line, i) => {
-      // Perbaikan: Spasi kosong antar paragraf yang lebih proporsional
-      if (line.trim() === "") return <div key={i} className="h-2" />;
+      if (line.trim() === "") return <div key={i} className="h-3" />;
 
       return (
         <p 
           key={i} 
-          className="mb-2 last:mb-0 leading-relaxed text-slate-600 text-left text-[13px]"
+          className="mb-2 last:mb-0 leading-[1.6] text-slate-700 text-left text-[14px]"
           style={{ 
-            wordBreak: 'break-all', 
-            overflowWrap: 'anywhere', 
+            overflowWrap: 'break-word', // Perbaikan: Kata tidak akan terpotong di tengah
+            wordWrap: 'break-word',
             whiteSpace: 'pre-wrap'
           }}
         >
@@ -79,10 +74,9 @@ function ImagePopup() {
                   href={cleanUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 underline decoration-blue-200 underline-offset-2 font-bold transition-all inline-flex items-center gap-0.5 break-all"
+                  className="text-blue-600 hover:text-blue-800 underline decoration-blue-200 underline-offset-2 font-medium break-all"
                 >
                   {part} 
-                  <ExternalLink size={11} className="shrink-0 mb-0.5" />
                 </a>
               );
             }
@@ -92,6 +86,7 @@ function ImagePopup() {
       );
     });
   };
+  // ------------------------------------
 
   const closePopup = () => setIsOpen(false);
 
@@ -105,48 +100,41 @@ function ImagePopup() {
         
         <motion.div 
           key={current.id || `popup-${currentIndex}`}
-          initial={{ opacity: 0, scale: 0.9, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.9, y: 20 }}
-          className="relative w-full max-w-[400px] max-h-[90vh] bg-white rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden border border-white/20"
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="relative w-full max-w-[400px] max-h-[85vh] bg-white rounded-3xl shadow-2xl flex flex-col overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Close Button lebih kecil & clean */}
           <button 
             onClick={closePopup} 
-            className="absolute top-5 right-5 z-50 p-2 bg-white/80 hover:bg-rose-500 hover:text-white text-slate-400 rounded-full shadow-sm transition-all active:scale-90 border border-slate-100"
+            className="absolute top-4 right-4 z-50 p-2 bg-black/10 hover:bg-black/20 text-white rounded-full transition-all active:scale-90"
           >
-            <X size={16} strokeWidth={3} />
+            <X size={18} />
           </button>
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto hide-scrollbar scroll-smooth">
-            {/* Header Image */}
             <div className="relative w-full aspect-[4/3] bg-slate-100 shrink-0">
               <img src={current.url_gambar} className="w-full h-full object-cover" alt="Banner" />
               <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent" />
             </div>
 
-            {/* Content Container */}
-            <div className="px-7 pt-4 pb-8 bg-white">
+            <div className="px-6 pt-2 pb-8 bg-white">
               <div className="flex justify-center mb-4">
-                <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[9px] font-bold uppercase tracking-[0.2em] flex items-center gap-1.5 border border-blue-100/50">
-                  <Zap size={10} fill="currentColor" /> Pengumuman
+                <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-bold uppercase tracking-widest border border-blue-100">
+                  Pengumuman
                 </span>
               </div>
               
-              <h3 className="text-xl font-extrabold text-slate-900 leading-tight text-center mb-5 tracking-tight px-2">
+              <h3 className="text-xl font-bold text-slate-900 leading-snug text-center mb-5 px-2">
                 {current.judul}
               </h3>
 
-              {/* Box Deskripsi dengan spasi internal yang lebih lega */}
-              <div className="bg-slate-50/80 border border-slate-100 rounded-2xl p-5 mb-6 w-full min-w-0">
-                <div className="w-full min-w-0">
-                  {renderCleanDescription(current.deskripsi)}
-                </div>
+              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 mb-6">
+                {renderCleanDescription(current.deskripsi)}
               </div>
               
-              {/* Action Buttons */}
-              <div className="space-y-2.5 px-2">
+              <div className="space-y-3 px-1">
                 {current.file_url && current.file_url.length > 5 && (
                   <motion.a 
                     whileHover={{ scale: 1.01 }}
@@ -154,28 +142,23 @@ function ImagePopup() {
                     href={current.file_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 text-white rounded-xl font-bold uppercase text-[10px] tracking-widest shadow-lg"
+                    className="flex items-center justify-center gap-2 w-full py-3.5 bg-slate-900 text-white rounded-xl font-bold text-[12px] tracking-wider shadow-lg"
                   >
-                    <Download size={14} /> Lampiran
+                    <Download size={14} /> LIHAT LAMPIRAN
                   </motion.a>
                 )}
 
                 <button 
                   onClick={closePopup} 
-                  className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all shadow-md shadow-blue-100"
+                  className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[12px] tracking-wider transition-all shadow-md"
                 >
-                  Mengerti
+                  MENGERTI
                 </button>
               </div>
             </div>
           </div>
         </motion.div>
       </div>
-
-      <style>{`
-        .hide-scrollbar::-webkit-scrollbar { display: none !important; }
-        .hide-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }
-      `}</style>
     </AnimatePresence>
   );
 }
