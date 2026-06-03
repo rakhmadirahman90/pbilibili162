@@ -16,7 +16,7 @@ import BadmintonQuiz from './components/BadmintonQuiz';
 import Gallery from './components/Gallery';
 import RegistrationForm from './components/RegistrationForm'; 
 import Contact from './components/Contact'; 
-import Footer from './components/Footer';
+// import Footer from './components/Footer'; // Footer lama dinonaktifkan
 import PublicKasView from './components/PublicKasView';
 import DokumenPenting from './components/DokumenPenting'; 
 import StrukturOrganisasi from './components/StrukturOrganisasi'; 
@@ -260,7 +260,10 @@ export default function App() {
               )}
             </AnimatePresence>
             
-            <Footer />
+            {/* Footer Custom */}
+            <footer className="w-full py-8 text-center text-slate-500 text-sm border-t border-white/5 bg-[#0b0e14]">
+              <p>© 2026 PB BILIBILI 162</p>
+            </footer>
           </div>
         } />
 
