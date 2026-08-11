@@ -2,65 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { MapPin, Clock, Mail, ExternalLink, Loader2, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../supabase';
-
 const defaultMapEmbedUrl = 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3977.340274291079!2d119.62310187413628!3d-3.929532544265112!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x2d95bb1f2c5e6249%3A0xee8a433e727588ca!2sJl.%20Andi%20Makkasau%20No.171%2C%20Ujung%20Lare%2C%20Kec.%20Soreang%2C%20Kota%20Parepare%2C%20Sulawesi%20Selatan%2091131!5e0!3m2!1sid!2sid!4v1716543210987!5m2!1sid!2sid';
 const defaultMapsUrl = 'https://www.google.com/maps?q=Jl.+Andi+Makkasau+No.171,+Parepare';
-
 export default function Contact() {
-  const [contactData, setContactData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    const fetchContact = async () => {
-      try {
-        const { data, error } = await supabase.from('contacts').select('*').maybeSingle();
-        if (!cancelled && !error) setContactData(data || null);
-      } catch (error) { console.error('Error fetching contact:', error); }
-      finally { if (!cancelled) setLoading(false); }
-    };
-    fetchContact();
-    return () => { cancelled = true; };
-  }, []);
-
-  const address = contactData?.address || 'Jl. Andi Makkasau No.171, Ujung Lare, Kec. Soreang, Kota Parepare, Sulawesi Selatan 91131';
-  const hours = contactData?.operating_hours || 'Senin - Sabtu: 08.00 - 22.00 WITA';
-  const mapsUrl = contactData?.maps_url || defaultMapsUrl;
-  const embedUrl = contactData?.maps_iframe || defaultMapEmbedUrl;
-
-  return (
-    <section id="contact" className="py-12 sm:py-16 lg:py-24 bg-[#0b0e14] text-white relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-[320px] sm:w-[600px] h-[320px] sm:h-[600px] bg-blue-600/5 blur-[100px] sm:blur-[120px] rounded-full pointer-events-none -mr-40 sm:-mr-64 -mt-40 sm:-mt-64" />
-      <div className="absolute bottom-0 left-0 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-indigo-600/5 blur-[100px] sm:blur-[120px] rounded-full pointer-events-none -ml-32 -mb-32" />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="text-center mb-10 sm:mb-16 lg:mb-20">
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="inline-flex items-center gap-2 bg-blue-600/10 border border-blue-500/20 px-4 py-2 rounded-full mb-5 sm:mb-6"><MessageSquare size={16} className="text-blue-500" /><span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400">Hubungi Kami</span></motion.div>
-          <motion.h2 initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-3xl sm:text-4xl md:text-6xl font-black mb-5 sm:mb-6 tracking-tighter italic uppercase break-words">MARKAS <span className="text-blue-600">BESAR</span></motion.h2>
-          <p className="text-zinc-500 max-w-2xl mx-auto uppercase tracking-widest text-[9px] sm:text-[10px] md:text-xs font-bold leading-relaxed">Kunjungi pusat pelatihan dan administrasi PB Bilibili 162 di Kota Parepare</p>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 lg:gap-12 items-stretch">
-          <motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} className="flex flex-col gap-5 sm:gap-6">
-            <div className="flex-1 bg-[#1a1d26] p-5 sm:p-8 md:p-12 rounded-[2rem] sm:rounded-[2.5rem] border border-white/5 shadow-2xl relative overflow-hidden">
-              <h3 className="text-xl sm:text-2xl font-black mb-8 sm:mb-10 flex items-center gap-3 sm:gap-4 italic uppercase tracking-tight"><span className="w-2 h-9 sm:h-10 bg-blue-600 rounded-full shrink-0" /> Informasi Kontak</h3>
-              <div className="space-y-7 sm:space-y-10">
-                <ContactRow icon={<MapPin className="text-blue-500" size={24} />} label="Alamat Utama"><p className="text-zinc-200 leading-relaxed font-medium text-base sm:text-lg break-words">{address}</p></ContactRow>
-                <ContactRow icon={<Clock className="text-emerald-500" size={24} />} label="Jam Operasional"><p className="text-zinc-200 font-black text-base sm:text-lg italic uppercase break-words">{hours}</p></ContactRow>
-                {contactData?.email && <ContactRow icon={<Mail className="text-purple-500" size={24} />} label="Official Email"><a href={`mailto:${contactData.email}`} className="text-zinc-200 font-bold text-base sm:text-lg break-all hover:text-blue-400">{contactData.email}</a></ContactRow>}
-              </div>
-            </div>
-            <motion.a whileHover={{ scale: 1.01 }} whileTap={{ scale: .98 }} href={mapsUrl} target="_blank" rel="noopener noreferrer" className="w-full py-4 sm:py-5 px-4 bg-white text-black hover:bg-blue-600 hover:text-white rounded-2xl sm:rounded-[1.5rem] font-black uppercase text-[10px] sm:text-xs tracking-[0.2em] sm:tracking-[0.3em] shadow-2xl transition-all flex items-center justify-center gap-3 text-center"><span>NAIGASI GOOGLE MAPS</span><ExternalLink size={17} /></motion.a>
-          </motion.div>
-
-          <motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} className="w-full min-h-[320px] sm:min-h-[420px] lg:min-h-[560px] h-full rounded-[2rem] sm:rounded-[3rem] overflow-hidden border border-white/5 shadow-[0_30px_100px_rgba(0,0,0,0.5)] bg-[#1a1d26] relative">
-            {loading ? <div className="absolute inset-0 flex flex-col items-center justify-center gap-4"><Loader2 className="animate-spin text-blue-600" size={36} /><span className="text-[10px] font-black uppercase tracking-widest text-zinc-600">Memuat Peta...</span></div> : <iframe src={embedUrl} className="absolute inset-0 w-full h-full border-0" allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade" title="Lokasi Markas PB Bilibili 162" />}
-          </motion.div>
-        </div>
-      </div>
-    </section>
-  );
+  const [contactData, setContactData] = useState<any>(null); const [loading, setLoading] = useState(true);
+  useEffect(() => { let cancelled = false; const fetchContact = async () => { try { const { data, error } = await supabase.from('contacts').select('*').maybeSingle(); if (!cancelled && !error) setContactData(data || null); } catch (error) { console.error('Error fetching contact:', error); } finally { if (!cancelled) setLoading(false); } }; fetchContact(); return () => { cancelled = true; }; }, []);
+  const address = contactData?.address || 'Jl. Andi Makkasau No.171, Ujung Lare, Kec. Soreang, Kota Parepare, Sulawesi Selatan 91131'; const hours = contactData?.operating_hours || 'Senin - Sabtu: 08.00 - 22.00 WITA'; const mapsUrl = contactData?.maps_url || defaultMapsUrl; const embedUrl = contactData?.maps_iframe || defaultMapEmbedUrl;
+  return <section id="contact" className="py-12 sm:py-16 lg:py-24 bg-[#0b0e14] text-white relative overflow-hidden"><div className="absolute top-0 right-0 w-[320px] sm:w-[600px] h-[320px] sm:h-[600px] bg-blue-600/5 blur-[100px] rounded-full pointer-events-none -mr-40 sm:-mr-64 -mt-40 sm:-mt-64" /><div className="absolute bottom-0 left-0 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-indigo-600/5 blur-[100px] rounded-full pointer-events-none -ml-32 -mb-32" /><div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10"><div className="text-center mb-10 sm:mb-16 lg:mb-20"><motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="inline-flex items-center gap-2 bg-blue-600/10 border border-blue-500/20 px-4 py-2 rounded-full mb-5"><MessageSquare size={16} className="text-blue-500" /><span className="text-[10px] font-black uppercase tracking-[.2em] text-blue-400">Hubungi Kami</span></motion.div><motion.h2 initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-3xl sm:text-4xl md:text-6xl font-black mb-5 tracking-tighter italic uppercase break-words">MARKAS <span className="text-blue-600">BESAR</span></motion.h2><p className="text-zinc-500 max-w-2xl mx-auto uppercase tracking-widest text-[9px] sm:text-xs font-bold leading-relaxed">Kunjungi pusat pelatihan dan administrasi PB Bilibili 162 di Kota Parepare</p></div><div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 lg:gap-12 items-stretch"><motion.div initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} className="flex flex-col gap-5 sm:gap-6"><div className="flex-1 bg-[#1a1d26] p-5 sm:p-8 md:p-12 rounded-[2rem] sm:rounded-[2.5rem] border border-white/5 shadow-2xl"><h3 className="text-xl sm:text-2xl font-black mb-8 flex items-center gap-3 italic uppercase"><span className="w-2 h-9 bg-blue-600 rounded-full shrink-0" /> Informasi Kontak</h3><div className="space-y-7 sm:space-y-10"><ContactRow icon={<MapPin className="text-blue-500" size={24} />} label="Alamat Utama"><p className="text-zinc-200 leading-relaxed font-medium text-base sm:text-lg break-words">{address}</p></ContactRow><ContactRow icon={<Clock className="text-emerald-500" size={24} />} label="Jam Operasional"><p className="text-zinc-200 font-black text-base sm:text-lg italic uppercase break-words">{hours}</p></ContactRow>{contactData?.email && <ContactRow icon={<Mail className="text-purple-500" size={24} />} label="Official Email"><a href={`mailto:${contactData.email}`} className="text-zinc-200 font-bold text-base sm:text-lg break-all hover:text-blue-400">{contactData.email}</a></ContactRow>}</div></div><motion.a whileHover={{ scale: 1.01 }} whileTap={{ scale: .98 }} href={mapsUrl} target="_blank" rel="noopener noreferrer" className="w-full py-4 sm:py-5 px-4 bg-white text-black hover:bg-blue-600 hover:text-white rounded-2xl font-black uppercase text-[10px] sm:text-xs tracking-[.2em] shadow-2xl transition-all flex items-center justify-center gap-3 text-center"><span>NAVIGASI GOOGLE MAPS</span><ExternalLink size={17} /></motion.a></motion.div><motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} className="w-full min-h-[320px] sm:min-h-[420px] lg:min-h-[560px] rounded-[2rem] sm:rounded-[3rem] overflow-hidden border border-white/5 shadow-2xl bg-[#1a1d26] relative">{loading ? <div className="absolute inset-0 flex flex-col items-center justify-center gap-4"><Loader2 className="animate-spin text-blue-600" size={36} /><span className="text-[10px] font-black uppercase tracking-widest text-zinc-600">Memuat Peta...</span></div> : <iframe src={embedUrl} className="absolute inset-0 w-full h-full border-0" allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade" title="Lokasi Markas PB Bilibili 162" />}</motion.div></div></div></section>;
 }
-
-function ContactRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
-  return <div className="flex gap-4 sm:gap-6 min-w-0"><div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/5 rounded-2xl flex items-center justify-center shrink-0 border border-white/10">{icon}</div><div className="min-w-0 flex-1"><h4 className="font-black text-zinc-500 text-[9px] sm:text-[10px] uppercase tracking-[0.2em] mb-2">{label}</h4>{children}</div></div>;
-}
+function ContactRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) { return <div className="flex gap-4 sm:gap-6 min-w-0"><div className="w-12 h-12 sm:w-14 sm:h-14 bg-white/5 rounded-2xl flex items-center justify-center shrink-0 border border-white/10">{icon}</div><div className="min-w-0 flex-1"><h4 className="font-black text-zinc-500 text-[9px] sm:text-[10px] uppercase tracking-[.2em] mb-2">{label}</h4>{children}</div></div>; }
