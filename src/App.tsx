@@ -1,118 +1,108 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { supabase } from './supabase'; 
-
-// --- IMPORT FALLBACK DATA ---
+import React, { useEffect, useRef, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { supabase } from './supabase';
 import popupFallback from './data/konfigurasi_popup.json';
 
-// Import Komponen Landing Page
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
-import About from './components/About';
 import News from './components/News';
-import Athletes from './components/Players'; 
-import Ranking from './components/Rankings'; 
-import BadmintonQuiz from './components/BadmintonQuiz'; 
+import About from './components/About';
+import Athletes from './components/Players';
+import Ranking from './components/Rankings';
+import BadmintonQuiz from './components/BadmintonQuiz';
 import Gallery from './components/Gallery';
-import RegistrationForm from './components/RegistrationForm'; 
-import Contact from './components/Contact'; 
-// import Footer from './components/Footer'; // Footer lama dinonaktifkan
+import RegistrationForm from './components/RegistrationForm';
+import Contact from './components/Contact';
 import PublicKasView from './components/PublicKasView';
-import DokumenPenting from './components/DokumenPenting'; 
-import StrukturOrganisasi from './components/StrukturOrganisasi'; 
+import DokumenPenting from './components/DokumenPenting';
+import StrukturOrganisasi from './components/StrukturOrganisasi';
 
-// Import Komponen Admin
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
 import ManajemenPendaftaran from './ManajemenPendaftaran';
 import ManajemenAtlet from './ManajemenAtlet';
 import AdminBerita from './components/AdminBerita';
-import AdminMatch from './components/AdminMatch'; 
-import AdminRanking from './components/AdminRanking'; 
-import AdminGallery from './components/AdminGallery'; 
-import AdminContact from './components/AdminContact'; 
-import KelolaNavbar from './components/KelolaNavbar'; 
+import AdminMatch from './components/AdminMatch';
+import AdminRanking from './components/AdminRanking';
+import AdminGallery from './components/AdminGallery';
+import AdminContact from './components/AdminContact';
+import KelolaNavbar from './components/KelolaNavbar';
 import ManajemenPoin from './components/ManajemenPoin';
 import AuditLogPoin from './components/AuditLogPoin';
-import AdminLaporan from './components/AdminLaporan'; 
-import AdminLogs from './components/AdminLogs'; 
-import AdminTampilan from './components/AdminTampilan'; 
-import KelolaHero from './components/KelolaHero'; 
-import AdminPopup from './components/AdminPopup'; 
-import AdminFooter from './components/AdminFooter'; 
+import AdminLaporan from './components/AdminLaporan';
+import AdminLogs from './components/AdminLogs';
+import AdminTampilan from './components/AdminTampilan';
+import KelolaHero from './components/KelolaHero';
+import AdminPopup from './components/AdminPopup';
+import AdminFooter from './components/AdminFooter';
 import AdminAbout from './components/AdminAbout';
-import AdminStructure from './components/AdminStructure'; 
-import ManajemenDokumen from './components/ManajemenDokumen'; 
-import { KelolaSurat } from './components/KelolaSurat'; 
-import KasManager from './components/KasManager'; 
+import AdminStructure from './components/AdminStructure';
+import ManajemenDokumen from './components/ManajemenDokumen';
+import { KelolaSurat } from './components/KelolaSurat';
+import KasManager from './components/KasManager';
 
-import { X, ChevronLeft, ChevronRight, Menu, Zap, Download, ExternalLink, Volume2, VolumeX, ArrowLeft } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, Menu, Volume2, VolumeX, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 
-// --- KONSTANTA AUDIO ---
-const MARS_URL = "https://missjyvqfehamtpyodjr.supabase.co/storage/v1/object/public/assets/Mars%20US162.mp3";
+const MARS_URL = 'https://missjyvqfehamtpyodjr.supabase.co/storage/v1/object/public/assets/Mars%20US162.mp3';
 
-// HELPER: Auto Scroll ke atas setiap pindah route
 function ScrollToTop() {
   const { pathname } = useLocation();
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [pathname]);
+  useEffect(() => window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior }), [pathname]);
   return null;
 }
 
-/**
- * FIXED POPUP COMPONENT WITH FALLBACK
- */
 function ImagePopup() {
   const [isOpen, setIsOpen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [promoImages, setPromoImages] = useState<any[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const fetchActivePopups = async () => {
+    let cancelled = false;
+    const load = async () => {
       try {
-        const { data, error } = await supabase
-          .from('konfigurasi_popup')
-          .select('*')
-          .eq('is_active', true)
-          .order('created_at', { ascending: false });
-        
-        if (!error && data && data.length > 0) {
-          setPromoImages(data);
-          setTimeout(() => setIsOpen(true), 1000);
-        } else {
-          const activeFallbacks = (popupFallback as any[]).filter(p => p.is_active);
-          if (activeFallbacks.length > 0) {
-            setPromoImages(activeFallbacks);
-            setTimeout(() => setIsOpen(true), 1000);
-          }
+        const { data, error } = await supabase.from('konfigurasi_popup').select('*').eq('is_active', true).order('created_at', { ascending: false });
+        if (cancelled) return;
+        const items = !error && data?.length ? data : (popupFallback as any[]).filter(p => p.is_active);
+        if (items.length) {
+          setPromoImages(items);
+          window.setTimeout(() => !cancelled && setIsOpen(true), 1000);
         }
-      } catch (err) {
-        console.error("Gagal memuat pop-up:", err);
+      } catch (error) {
+        console.error('Gagal memuat pop-up:', error);
       }
     };
-    fetchActivePopups();
+    load();
+    return () => { cancelled = true; };
   }, []);
 
-  const closePopup = () => setIsOpen(false);
-  if (promoImages.length === 0 || !isOpen) return null;
+  useEffect(() => {
+    if (!isOpen) return;
+    document.body.classList.add('modal-open');
+    const onKey = (event: KeyboardEvent) => event.key === 'Escape' && setIsOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.classList.remove('modal-open');
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [isOpen]);
+
+  if (!isOpen || !promoImages.length) return null;
   const current = promoImages[currentIndex];
 
   return (
     <AnimatePresence mode="wait">
-      <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
-        <div className="absolute inset-0" onClick={closePopup} />
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-[420px] max-h-[85vh] bg-white rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border border-white/20" onClick={(e) => e.stopPropagation()}>
-          <button onClick={closePopup} className="absolute top-4 right-4 z-50 p-2 bg-white/90 hover:bg-rose-500 hover:text-white text-slate-900 rounded-full shadow-lg transition-all"><X size={18} /></button>
-          <div ref={scrollRef} className="flex-1 overflow-y-auto hide-scrollbar">
-             <img src={current.url_gambar} className="w-full h-auto object-cover" alt={current.judul} />
-             <div className="p-8">
-                <h3 className="text-xl font-black uppercase mb-4">{current.judul}</h3>
-                <p className="text-slate-600 text-sm leading-relaxed mb-6">{current.deskripsi}</p>
-                <button onClick={closePopup} className="w-full py-4 bg-blue-600 text-white rounded-xl font-bold uppercase tracking-widest text-[10px]">Tutup</button>
-             </div>
+      <div className="fixed inset-0 z-[999999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/90 backdrop-blur-md overflow-y-auto" role="dialog" aria-modal="true" aria-label="Promosi PB Bilibili 162">
+        <button aria-label="Tutup promosi" className="absolute inset-0 cursor-default" onClick={() => setIsOpen(false)} />
+        <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} className="relative z-10 w-full max-w-[420px] max-h-[min(90dvh,760px)] bg-white rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border border-white/20" onClick={e => e.stopPropagation()}>
+          <button onClick={() => setIsOpen(false)} aria-label="Tutup promosi" className="absolute top-3 right-3 z-20 p-3 bg-white/95 hover:bg-rose-500 hover:text-white text-slate-900 rounded-full shadow-lg transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/30"><X size={18} /></button>
+          <div className="flex-1 overflow-y-auto overscroll-contain hide-scrollbar">
+            <img src={current.url_gambar} className="w-full h-auto object-cover" alt={current.judul || 'Promosi'} />
+            <div className="p-6 sm:p-8">
+              <h3 className="text-xl font-black uppercase mb-4 break-words">{current.judul}</h3>
+              <p className="text-slate-600 text-sm leading-relaxed mb-6 break-words">{current.deskripsi}</p>
+              <button onClick={() => setIsOpen(false)} className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold uppercase tracking-widest text-[10px] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/30">Tutup</button>
+            </div>
           </div>
         </motion.div>
       </div>
@@ -120,213 +110,168 @@ function ImagePopup() {
   );
 }
 
-export default function App() {
-  const [session, setSession] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [activeAboutTab, setActiveAboutTab] = useState('sejarah');
-  const [activeAthleteFilter, setActiveAthleteFilter] = useState('all');
-
-  // STATE UNTUK DEDICATED FULL-PAGE VIEWS
-  const [activeView, setActiveView] = useState<string | null>(null);
-
-  // AUDIO LOGIC
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+function PublicShell({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
   const [isMarsPlaying, setIsMarsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+  const handleNavigate = (path: string, tab?: string) => {
+    const normalized = path === 'home' ? '/' : `/${path.replace(/^\//, '')}`;
+    if (tab && (path === 'tentang-kami' || path === 'about')) {
+      navigate(`/tentang-kami/${encodeURIComponent(tab)}`);
+      return;
+    }
+    if (tab && (path === 'atlet' || path === 'players')) {
+      navigate(`/atlet/${encodeURIComponent(tab.toLowerCase())}`);
+      return;
+    }
+    if (path === 'peringkat' || path === 'rankings') return navigate('/peringkat');
+    if (path === 'dokumen-penting') return navigate('/dokumen-penting');
+    if (path === 'contact' || path === 'kontak') return navigate('/kontak');
+    if (path === 'register' || path === 'pendaftaran') return navigate('/pendaftaran');
+    if (path === 'gallery' || path === 'galeri') return navigate('/galeri');
+    if (path === 'about') return navigate('/tentang-kami');
+    navigate(normalized);
+  };
 
-  const handleNavigate = (sectionId: string, subPath?: string) => {
-    const fullPageMenus = ['kas', 'quiz', 'contact', 'kontak', 'struktur', 'dokumen-penting', 'register', 'pendaftaran', 'peringkat', 'rankings', 'atlet', 'players', 'tentang-kami', 'about', 'galeri', 'gallery'];
-
-    if (fullPageMenus.includes(sectionId)) {
-        if (sectionId === 'tentang-kami' || sectionId === 'about') {
-            if (subPath) setActiveAboutTab(subPath);
-        }
-        if (sectionId === 'atlet' || sectionId === 'players') {
-            if (subPath) setActiveAthleteFilter(subPath.toLowerCase());
-        }
-        
-        setActiveView(sectionId);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else {
-        setActiveView(null);
-        setTimeout(() => {
-            const element = document.getElementById(sectionId);
-            if (element) {
-                const offset = 100;
-                window.scrollTo({ top: element.getBoundingClientRect().top + window.pageYOffset - offset, behavior: 'smooth' });
-            }
-        }, 100);
+  const toggleMars = async () => {
+    if (!audioRef.current) return;
+    try {
+      if (isMarsPlaying) {
+        audioRef.current.pause();
+        setIsMarsPlaying(false);
+      } else {
+        await audioRef.current.play();
+        setIsMarsPlaying(true);
+      }
+    } catch {
+      setIsMarsPlaying(false);
     }
   };
 
-  const BackToHomeButton = () => (
-    <motion.button 
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ scale: 1.05, backgroundColor: '#2563eb' }}
-      whileTap={{ scale: 0.95 }}
-      onClick={() => { setActiveView(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-      className="fixed bottom-10 left-1/2 -translate-x-1/2 px-8 py-4 bg-blue-600 text-white rounded-full font-black text-[11px] tracking-[0.3em] shadow-[0_20px_50px_rgba(37,99,235,0.4)] z-[9999] uppercase flex items-center gap-3 border border-white/20 backdrop-blur-md"
-    >
-      <ArrowLeft size={16} /> Kembali ke Beranda
-    </motion.button>
-  );
-
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0b0e14]">
-        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+  return (
+    <div className="min-h-screen w-full overflow-x-clip bg-[#0b0e14] text-white">
+      <Navbar onNavigate={handleNavigate} />
+      <audio ref={audioRef} src={MARS_URL} loop preload="none" />
+      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[9998] flex flex-col items-end gap-3 pointer-events-none">
+        <AnimatePresence>
+          {isMarsPlaying && <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="hidden sm:flex bg-slate-900/90 backdrop-blur-md border border-white/10 px-4 py-2 rounded-2xl shadow-xl items-center gap-3"><p className="text-[9px] font-black uppercase tracking-widest text-white italic">Mars PB 162</p></motion.div>}
+        </AnimatePresence>
+        <button onClick={toggleMars} aria-label={isMarsPlaying ? 'Matikan Mars PB 162' : 'Putar Mars PB 162'} className="pointer-events-auto w-12 h-12 sm:w-14 sm:h-14 bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow-2xl flex items-center justify-center border border-white/20 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/40">
+          {isMarsPlaying ? <Volume2 size={20} /> : <VolumeX size={20} className="text-white/60" />}
+        </button>
+      </div>
+      <ImagePopup />
+      {children}
+      <footer className="w-full py-8 px-4 text-center text-slate-500 text-sm border-t border-white/5 bg-[#0b0e14]"><p>© 2026 PB BILIBILI 162</p></footer>
     </div>
   );
+}
 
+function PublicPage({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
   return (
-    <Router>
-      <ScrollToTop />
-      <audio ref={audioRef} src={MARS_URL} loop />
-      
-      <Routes>
-        <Route path="/" element={
-          <div className="min-h-screen bg-[#0b0e14] w-full overflow-x-hidden">
-            <ImagePopup />
-            <Navbar onNavigate={handleNavigate} />
-            
-            {/* MUSIC CONTROLLER */}
-            <div className="fixed bottom-6 right-6 z-[99999] flex flex-col items-end gap-3 pointer-events-none">
-                <AnimatePresence>
-                  {isMarsPlaying && (
-                    <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} className="bg-slate-900/90 backdrop-blur-md border border-white/10 px-4 py-2 rounded-2xl shadow-xl flex items-center gap-3">
-                        <div className="flex gap-0.5">
-                           {[1,2,3,4].map(i => <motion.div key={i} animate={{ height: [4, 12, 4] }} transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.1 }} className="w-1 bg-blue-500 rounded-full" />)}
-                        </div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-white italic">Mars PB 162</p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-                <motion.button 
-                  whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-                  onClick={() => {
-                    if (audioRef.current) {
-                      isMarsPlaying ? audioRef.current.pause() : audioRef.current.play();
-                      setIsMarsPlaying(!isMarsPlaying);
-                    }
-                  }}
-                  className="pointer-events-auto w-14 h-14 bg-blue-600 text-white rounded-full shadow-2xl flex items-center justify-center border border-white/20 group overflow-hidden"
-                >
-                  {isMarsPlaying ? <Volume2 size={20} /> : <VolumeX size={20} className="text-white/60" />}
-                </motion.button>
-            </div>
-
-            <AnimatePresence mode="wait">
-              {!activeView ? (
-                <motion.div key="landing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full">
-                  <Hero />
-                  <section id="berita-section"><News /></section>
-                </motion.div>
-              ) : (
-                /* DEDICATED FULL-PAGE VIEW DENGAN DARK MODE KONSISTEN */
-                <motion.div 
-                  key="dedicated-view"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.4 }}
-                  className="min-h-screen w-full flex flex-col items-center bg-[#0b0e14] pt-24 pb-32"
-                >
-                  <div className="w-full h-full max-w-7xl px-4 md:px-8 mx-auto">
-                    {/* Render Komponen dengan Props masing-masing */}
-                    {activeView === 'kas' && <PublicKasView />}
-                    {(activeView === 'quiz') && <BadmintonQuiz />}
-                    {(activeView === 'contact' || activeView === 'kontak') && <Contact />}
-                    {activeView === 'struktur' && <StrukturOrganisasi />}
-                    {activeView === 'dokumen-penting' && <DokumenPenting />}
-                    {(activeView === 'register' || activeView === 'pendaftaran') && <RegistrationForm />}
-                    {(activeView === 'peringkat' || activeView === 'rankings') && <Ranking />}
-                    {(activeView === 'atlet' || activeView === 'players') && <Athletes initialFilter={activeAthleteFilter} />}
-                    {(activeView === 'tentang-kami' || activeView === 'about') && <About activeTab={activeAboutTab} onTabChange={setActiveAboutTab} />}
-                    {(activeView === 'galeri' || activeView === 'gallery') && <Gallery />}
-                  </div>
-                  
-                  <BackToHomeButton />
-                </motion.div>
-              )}
-            </AnimatePresence>
-            
-            {/* Footer Custom */}
-            <footer className="w-full py-8 text-center text-slate-500 text-sm border-t border-white/5 bg-[#0b0e14]">
-              <p>© 2026 PB BILIBILI 162</p>
-            </footer>
-          </div>
-        } />
-
-        <Route path="/login" element={!session ? <Login /> : <Navigate to="/admin/dashboard" replace />} />
-        <Route path="/admin/*" element={session ? <AdminLayout session={session} /> : <Navigate to="/login" replace />} />
-      </Routes>
-      <style>{`
-        /* Menghilangkan scrollbar tapi fungsi scroll tetap ada */
-        .hide-scrollbar::-webkit-scrollbar { display: none !important; }
-        .hide-scrollbar { -ms-overflow-style: none !important; scrollbar-width: none !important; }
-        
-        /* Custom scrollbar untuk panel admin */
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #050505; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
-        
-        /* Global Background Smoothness */
-        body { background-color: #0b0e14; }
-      `}</style>
-    </Router>
+    <PublicShell>
+      <main className="min-h-[100dvh] w-full pt-20 pb-24">
+        <div className="w-full max-w-7xl mx-auto px-0 sm:px-4 lg:px-8">{children}</div>
+      </main>
+      <button onClick={() => navigate('/')} className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9990] px-5 sm:px-8 py-3 sm:py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-full font-black text-[10px] sm:text-[11px] tracking-[0.18em] sm:tracking-[0.3em] shadow-[0_20px_50px_rgba(37,99,235,0.4)] uppercase flex items-center gap-2 sm:gap-3 border border-white/20 backdrop-blur-md whitespace-nowrap focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/40"><ArrowLeft size={15} /> Kembali ke Beranda</button>
+    </PublicShell>
   );
+}
+
+function HomePage() {
+  return <PublicShell><main><Hero /><section id="berita-section"><News /></section></main></PublicShell>;
 }
 
 function AdminLayout({ session }: { session: any }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   return (
-    <div className="flex h-screen w-full bg-[#050505] overflow-hidden">
-      <aside className={`h-full flex-shrink-0 z-[101] transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} absolute md:relative`}>
-        <Sidebar email={session.user.email} isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
-      </aside>
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        <div className="md:hidden flex items-center justify-between bg-[#0F172A] p-4 border-b border-white/5">
-          <button onClick={() => setIsSidebarOpen(true)} className="text-white p-2 hover:bg-white/10 rounded-lg"><Menu /></button>
-          <div className="text-white font-black italic tracking-tighter text-sm uppercase">Admin Console</div>
-          <div className="w-8"></div>
-        </div>
-        <div className="flex-1 overflow-y-auto bg-[#050505] custom-scrollbar">
-          <Routes>
-            <Route path="dashboard" element={<ManajemenPendaftaran />} />
-            <Route path="atlet" element={<ManajemenAtlet />} />
-            <Route path="surat" element={<KelolaSurat />} />
-            <Route path="kas" element={<KasManager />} />
-            <Route path="dokumen" element={<ManajemenDokumen />} /> 
-            <Route path="poin" element={<ManajemenPoin />} />
-            <Route path="audit-poin" element={<AuditLogPoin />} />
-            <Route path="skor" element={<AdminMatch />} />
-            <Route path="berita" element={<AdminBerita />} />
-            <Route path="ranking" element={<AdminRanking />} />
-            <Route path="galeri" element={<AdminGallery />} />
-            <Route path="kontak" element={<AdminContact />} />
-            <Route path="navbar" element={<KelolaNavbar />} />
-            <Route path="laporan" element={<AdminLaporan />} />
-            <Route path="logs" element={<AdminLogs />} />
-            <Route path="tampilan" element={<AdminTampilan />} />
-            <Route path="hero" element={<KelolaHero />} />
-            <Route path="popup" element={<AdminPopup />} /> 
-            <Route path="footer" element={<AdminFooter />} />
-            <Route path="about" element={<AdminAbout />} />
-            <Route path="struktur" element={<AdminStructure />} /> 
-            <Route path="*" element={<Navigate to="dashboard" replace />} />
-          </Routes>
-        </div>
+    <div className="flex min-h-[100dvh] w-full bg-[#050505] overflow-hidden">
+      <aside className={`fixed inset-y-0 left-0 z-[101] h-[100dvh] w-72 transition-transform duration-300 md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}><Sidebar email={session.user.email} isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} /></aside>
+      {isSidebarOpen && <button aria-label="Tutup menu admin" onClick={() => setIsSidebarOpen(false)} className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm md:hidden" />}
+      <main className="flex min-w-0 flex-1 flex-col min-h-[100dvh]">
+        <div className="md:hidden sticky top-0 z-[90] flex h-16 items-center justify-between bg-[#0F172A] px-4 border-b border-white/5"><button aria-label="Buka menu admin" onClick={() => setIsSidebarOpen(true)} className="p-2 text-white hover:bg-white/10 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"><Menu size={22} /></button><div className="text-white font-black italic tracking-tighter text-sm uppercase">Admin Console</div><div className="w-8" /></div>
+        <div className="flex-1 overflow-y-auto bg-[#050505] custom-scrollbar"><Routes>
+          <Route path="dashboard" element={<ManajemenPendaftaran />} />
+          <Route path="atlet" element={<ManajemenAtlet />} />
+          <Route path="surat" element={<KelolaSurat />} />
+          <Route path="kas" element={<KasManager />} />
+          <Route path="dokumen" element={<ManajemenDokumen />} />
+          <Route path="poin" element={<ManajemenPoin />} />
+          <Route path="audit-poin" element={<AuditLogPoin />} />
+          <Route path="skor" element={<AdminMatch />} />
+          <Route path="berita" element={<AdminBerita />} />
+          <Route path="ranking" element={<AdminRanking />} />
+          <Route path="galeri" element={<AdminGallery />} />
+          <Route path="kontak" element={<AdminContact />} />
+          <Route path="navbar" element={<KelolaNavbar />} />
+          <Route path="laporan" element={<AdminLaporan />} />
+          <Route path="logs" element={<AdminLogs />} />
+          <Route path="tampilan" element={<AdminTampilan />} />
+          <Route path="hero" element={<KelolaHero />} />
+          <Route path="popup" element={<AdminPopup />} />
+          <Route path="footer" element={<AdminFooter />} />
+          <Route path="about" element={<AdminAbout />} />
+          <Route path="struktur" element={<AdminStructure />} />
+          <Route path="*" element={<Navigate to="dashboard" replace />} />
+        </Routes></div>
       </main>
     </div>
   );
+}
+
+function AppRoutes({ session }: { session: any }) {
+  return <>
+    <ScrollToTop />
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/tentang-kami/:tab?" element={<PublicPage><AboutWrapper /></PublicPage>} />
+      <Route path="/atlet/:filter?" element={<PublicPage><AthletesWrapper /></PublicPage>} />
+      <Route path="/peringkat" element={<PublicPage><Ranking /></PublicPage>} />
+      <Route path="/quiz" element={<PublicPage><BadmintonQuiz /></PublicPage>} />
+      <Route path="/galeri" element={<PublicPage><Gallery /></PublicPage>} />
+      <Route path="/pendaftaran" element={<PublicPage><RegistrationForm /></PublicPage>} />
+      <Route path="/kontak" element={<PublicPage><Contact /></PublicPage>} />
+      <Route path="/kas" element={<PublicPage><PublicKasView /></PublicPage>} />
+      <Route path="/dokumen-penting" element={<PublicPage><DokumenPenting /></PublicPage>} />
+      <Route path="/struktur" element={<PublicPage><StrukturOrganisasi /></PublicPage>} />
+      <Route path="/login" element={!session ? <Login /> : <Navigate to="/admin/dashboard" replace />} />
+      <Route path="/admin/*" element={session ? <AdminLayout session={session} /> : <Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  </>;
+}
+
+function AboutWrapper() {
+  const { tab } = useParamsSafe();
+  const [activeTab, setActiveTab] = useState(tab || 'sejarah');
+  useEffect(() => setActiveTab(tab || 'sejarah'), [tab]);
+  return <About activeTab={activeTab} onTabChange={setActiveTab} />;
+}
+
+function AthletesWrapper() {
+  const { filter } = useParamsSafe();
+  return <Athletes initialFilter={(filter || 'all').toLowerCase()} />;
+}
+
+function useParamsSafe() {
+  const location = useLocation();
+  const parts = location.pathname.split('/').filter(Boolean);
+  return { tab: parts[1], filter: parts[1] };
+}
+
+export default function App() {
+  const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setLoading(false); });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (loading) return <div className="min-h-[100dvh] flex items-center justify-center bg-[#0b0e14]"><div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" aria-label="Memuat aplikasi" /></div>;
+
+  return <Router><AppRoutes session={session} /><style>{`.custom-scrollbar::-webkit-scrollbar{width:6px}.custom-scrollbar::-webkit-scrollbar-track{background:#050505}.custom-scrollbar::-webkit-scrollbar-thumb{background:#1e293b;border-radius:10px}`}</style></Router>;
 }
