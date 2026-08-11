@@ -2,23 +2,44 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Memperbaiki masalah horizontal scroll pada mobile */
+html { scroll-behavior: smooth; }
 body {
+  margin: 0;
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+  background: #0b0e14;
+}
+body.modal-open { overflow: hidden; }
+
+*, *::before, *::after { box-sizing: border-box; }
+img, svg, video, iframe { max-width: 100%; }
+img { height: auto; }
+button, input, select, textarea { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
 }
 
-/* Utilitas untuk menyembunyikan scrollbar tapi tetap bisa di-scroll */
-.hide-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-.hide-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Prevent flex/grid children from forcing horizontal overflow. */
+.min-w-0 { min-width: 0; }
+
+/* Comfortable touch scrolling for tables, drawers and media. */
+.overflow-x-auto, .overflow-y-auto { -webkit-overflow-scrolling: touch; }
+
+/* Dynamic viewport support on mobile browsers. */
+.min-h-screen { min-height: 100vh; min-height: 100dvh; }
+.h-screen { height: 100vh; height: 100dvh; }
+
+@media (max-width: 639px) {
+  .overflow-x-auto { scrollbar-width: thin; }
 }
 
-/* Memastikan gambar tidak keluar dari container */
-img {
-  max-width: 100%;
-  height: auto;
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
