@@ -1,457 +1,289 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabase';
-import { 
-  Plus, Trash2, Image as ImageIcon, Save, 
-  Loader2, Power, PowerOff, Upload, X, Camera, Edit3, GripVertical, FileText, Download, ExternalLink 
-} from 'lucide-react';
 import Swal from 'sweetalert2';
-
-// --- TAMBAHAN IMPORT UNTUK DRAG & DROP ---
-import {
-  DndContext, 
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  useSortable
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { Edit3, Image as ImageIcon, Loader2, Power, PowerOff, Trash2, Upload, X, RefreshCw } from 'lucide-react';
 
 interface PopupConfig {
   id: string;
   url_gambar: string;
-  judul: string;
-  deskripsi: string;
+  judul: string | null;
+  deskripsi: string | null;
   is_active: boolean;
   urutan: number;
-  file_url?: string; 
+  file_url?: string | null;
+  created_at?: string;
 }
 
-// --- FUNGSI HELPER: DETEKSI & FORMAT LINK OTOMATIS (VERSI PERBAIKAN FINAL) ---
-const renderDescriptionWithLinks = (text: string) => {
-  if (!text) return null;
-  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
-  
-  return text.split('\n').map((line, i) => (
-    /* PERBAIKAN: break-words dan whitespace-normal memastikan baris baru tercipta */
-    <p key={i} className="mb-1 last:mb-0 break-words overflow-hidden text-left whitespace-normal">
-      {line.split(urlRegex).map((part, index) => {
-        if (part.match(urlRegex)) {
-          const cleanUrl = part.startsWith('www.') ? `https://${part}` : part;
-          return (
-            <a 
-              key={index} 
-              href={cleanUrl} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              /* PERBAIKAN UTAMA: 
-                 1. inline: agar mengalir seperti teks biasa
-                 2. break-all: memutus karakter link di mana saja saat mencapai batas 
-              */
-              className="text-blue-400 underline hover:text-blue-300 inline break-all whitespace-normal"
-            >
-              {part} <ExternalLink size={10} className="inline-block mb-0.5 shrink-0" />
-            </a>
-          );
-        }
-        return <span key={index} className="break-words">{part}</span>;
-      })}
-    </p>
-  ));
-};
+const emptyForm = { judul: '', deskripsi: '', url_gambar: '', file_url: '' };
 
-// --- KOMPONEN: SORTABLE ITEM ---
-function SortablePopupItem({ item, toggleStatus, startEdit, handleDelete }: any) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({ id: item.id });
+const isUuid = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 50 : 'auto',
-    opacity: isDragging ? 0.5 : 1,
-  };
-
-  return (
-    <div 
-      ref={setNodeRef} 
-      style={style} 
-      className={`group relative bg-[#0F172A] rounded-[2.5rem] border-2 overflow-hidden transition-all duration-500 ${item.is_active ? 'border-blue-500/30' : 'border-white/5 opacity-60 grayscale hover:grayscale-0'}`}
-    >
-      <div className="aspect-[4/5] overflow-hidden relative bg-black">
-        <div 
-          {...attributes} {...listeners}
-          className="absolute top-5 right-5 z-40 p-2 bg-black/50 backdrop-blur-md rounded-xl cursor-grab active:cursor-grabbing text-white/50 hover:text-blue-500 transition-colors"
-        >
-          <GripVertical size={20} />
-        </div>
-
-        <img 
-            src={item.url_gambar} 
-            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" 
-            alt={item.judul} 
-        />
-        <div className="absolute inset-0 z-20 bg-gradient-to-t from-[#0F172A] via-transparent to-transparent opacity-80" />
-        <div className="absolute top-5 left-5 z-30 flex flex-col gap-2">
-          <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest backdrop-blur-md border ${item.is_active ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-slate-900/50 text-white/50 border-white/10'}`}>
-            {item.is_active ? `• POSISI ${item.urutan + 1}` : 'NON-AKTIF'}
-          </span>
-          {item.file_url && (
-            <span className="px-3 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full text-[8px] font-black uppercase tracking-widest backdrop-blur-md flex items-center gap-1">
-              <Download size={10} /> File Attached
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="p-7 relative z-30 -mt-20">
-        <h4 className="text-white font-black uppercase text-sm mb-2 italic line-clamp-1 tracking-tight">{item.judul || 'TANPA JUDUL'}</h4>
-        {/* PERBAIKAN: Menambah break-all pada grid view */}
-        <div className="text-white/50 text-[11px] font-medium mb-6 line-clamp-2 leading-relaxed min-h-[2rem] break-all">
-            {item.deskripsi}
-        </div>
-        
-        <div className="grid grid-cols-4 gap-2">
-          <button onClick={() => toggleStatus(item.id, item.is_active)} className={`col-span-1 py-3 rounded-xl flex items-center justify-center transition-all ${item.is_active ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white' : 'bg-white/5 text-white/40 hover:bg-blue-600 hover:text-white'}`}>
-            {item.is_active ? <Power size={16}/> : <PowerOff size={16}/>}
-          </button>
-          <button onClick={() => startEdit(item)} className="col-span-2 py-3 bg-blue-600 text-white hover:bg-blue-500 rounded-xl font-black text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-900/20">
-            <Edit3 size={14} /> EDIT
-          </button>
-          <button onClick={() => handleDelete(item.id)} className="col-span-1 py-3 bg-rose-600/10 text-rose-500 hover:bg-rose-600 hover:text-white rounded-xl transition-all flex items-center justify-center">
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+const getErrorMessage = (error: any) =>
+  error?.message || error?.details || error?.hint || 'Operasi Supabase gagal. Silakan coba lagi.';
 
 export default function AdminPopup() {
   const [popups, setPopups] = useState<PopupConfig[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isFileUploading, setIsFileUploading] = useState(false);
-  const [newPopup, setNewPopup] = useState({ url_gambar: '', judul: '', deskripsi: '', file_url: '' });
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
+  const nextOrder = useMemo(() => {
+    if (popups.length === 0) return 0;
+    return Math.max(...popups.map((item) => Number.isFinite(item.urutan) ? item.urutan : -1)) + 1;
+  }, [popups]);
 
-  const fetchPopups = async () => {
+  const resetForm = () => {
+    setEditingId(null);
+    setPreview(null);
+    setForm({ ...emptyForm });
+  };
+
+  const loadPopups = async (showError = true) => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('konfigurasi_popup')
-      .select('*')
-      .order('urutan', { ascending: true });
-    
-    if (!error && data) setPopups(data);
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchPopups(); }, []);
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = popups.findIndex((p) => p.id === active.id);
-    const newIndex = popups.findIndex((p) => p.id === over.id);
-
-    const newOrder = arrayMove(popups, oldIndex, newIndex);
-    setPopups(newOrder);
-
-    const updates = newOrder.map((popup, index) => ({
-      id: popup.id,
-      urutan: index,
-      judul: popup.judul,
-      deskripsi: popup.deskripsi,
-      url_gambar: popup.url_gambar,
-      is_active: popup.is_active,
-      file_url: popup.file_url
-    }));
-
-    const { error } = await supabase.from('konfigurasi_popup').upsert(updates);
-    if (error) {
-        Swal.fire('Gagal mengurutkan', error.message, 'error');
-        fetchPopups();
-    }
-  };
-
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setPreviewImage(URL.createObjectURL(file));
-    setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `popup-${Date.now()}.${fileExt}`;
-      const filePath = `promosi/${fileName}`;
-      const { error: uploadError } = await supabase.storage.from('identitas-atlet').upload(filePath, file);
-      if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage.from('identitas-atlet').getPublicUrl(filePath);
-      setNewPopup({ ...newPopup, url_gambar: publicUrl });
-      Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Gambar berhasil diunggah', showConfirmButton: false, timer: 2000 });
-    } catch (err: any) {
-      Swal.fire('Gagal', err.message, 'error');
+      const { data, error } = await supabase
+        .from('konfigurasi_popup')
+        .select('*')
+        .order('urutan', { ascending: true })
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setPopups((data || []) as PopupConfig[]);
+    } catch (error: any) {
+      console.error('[AdminPopup] load failed:', error);
+      if (showError) {
+        await Swal.fire({ title: 'Gagal memuat', text: getErrorMessage(error), icon: 'error', background: '#0F172A', color: '#fff' });
+      }
     } finally {
-      setIsUploading(false);
+      setLoading(false);
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setIsFileUploading(true);
+  useEffect(() => {
+    loadPopups();
+  }, []);
+
+  const uploadImage = async (file: File) => {
+    setUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `doc-${Date.now()}.${fileExt}`;
-      const filePath = `dokumen-popup/${fileName}`;
-      const { error: uploadError } = await supabase.storage.from('identitas-atlet').upload(filePath, file);
-      if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage.from('identitas-atlet').getPublicUrl(filePath);
-      
-      setNewPopup(prev => ({ ...prev, file_url: publicUrl }));
-      
-      Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'File lampiran diunggah', showConfirmButton: false, timer: 2000 });
-    } catch (err: any) {
-      Swal.fire('Gagal upload file', err.message, 'error');
+      if (!file.type.startsWith('image/')) throw new Error('File harus berupa gambar.');
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const path = `promosi/popup-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error } = await supabase.storage.from('identitas-atlet').upload(path, file, { upsert: false });
+      if (error) throw error;
+      const { data } = supabase.storage.from('identitas-atlet').getPublicUrl(path);
+      if (!data?.publicUrl) throw new Error('URL gambar Supabase tidak berhasil dibuat.');
+      setForm((prev) => ({ ...prev, url_gambar: data.publicUrl }));
+      setPreview(data.publicUrl);
+    } catch (error: any) {
+      console.error('[AdminPopup] upload failed:', error);
+      await Swal.fire('Upload gagal', getErrorMessage(error), 'error');
     } finally {
-      setIsFileUploading(false);
+      setUploading(false);
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newPopup.url_gambar) return Swal.fire('Opps!', 'Harap unggah gambar terlebih dahulu', 'warning');
+  const handleSave = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (saving || uploading) return;
 
-    setIsSaving(true);
-    
-    const payload = {
-      judul: newPopup.judul,
-      deskripsi: newPopup.deskripsi,
-      url_gambar: newPopup.url_gambar,
-      file_url: newPopup.file_url || null,
-      is_active: true
-    };
+    const judul = form.judul.trim();
+    const deskripsi = form.deskripsi.trim();
+    const urlGambar = form.url_gambar.trim();
+    const fileUrl = form.file_url.trim() || null;
 
+    if (!judul) return Swal.fire('Perhatian', 'Judul pop-up wajib diisi.', 'warning');
+    if (!urlGambar) return Swal.fire('Perhatian', 'Poster/gambar wajib diunggah.', 'warning');
+
+    setSaving(true);
     try {
+      const payload = {
+        judul,
+        deskripsi,
+        url_gambar: urlGambar,
+        file_url: fileUrl,
+        is_active: true,
+      };
+
       if (editingId) {
-        const { error } = await supabase
+        if (!isUuid(editingId)) throw new Error('ID pop-up tidak valid. Muat ulang data lalu coba edit lagi.');
+
+        const { data, error } = await supabase
           .from('konfigurasi_popup')
           .update(payload)
-          .eq('id', editingId);
-          
-        if (error) throw error;
-        Swal.fire({ title: 'Berhasil', text: 'Pop-up diperbarui', icon: 'success', background: '#0F172A', color: '#fff' });
-        setEditingId(null);
-      } else {
-        const { error } = await supabase
-          .from('konfigurasi_popup')
-          .insert([{
-            ...payload,
-            urutan: popups.length
-          }]);
-          
-        if (error) throw error;
-        Swal.fire({ title: 'Berhasil', text: 'Pop-up baru diaktifkan', icon: 'success', background: '#0F172A', color: '#fff' });
-      }
+          .eq('id', editingId)
+          .select('*')
+          .single();
 
-      setNewPopup({ url_gambar: '', judul: '', deskripsi: '', file_url: '' });
-      setPreviewImage(null);
-      fetchPopups();
-    } catch (err: any) {
-      Swal.fire('Error saat menyimpan', err.message, 'error');
+        if (error) throw error;
+        if (!data) throw new Error('Supabase tidak mengembalikan data setelah update.');
+
+        await loadPopups(false);
+        resetForm();
+        await Swal.fire({ title: 'Berhasil', text: 'Pop-up diperbarui dan tersimpan di Supabase.', icon: 'success', background: '#0F172A', color: '#fff' });
+      } else {
+        // Jangan pernah mengirim nama file sebagai id. PostgreSQL membutuhkan UUID.
+        const id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : null;
+        if (!id || !isUuid(id)) throw new Error('Browser tidak dapat membuat UUID yang valid.');
+
+        const { data, error } = await supabase
+          .from('konfigurasi_popup')
+          .insert([{ id, ...payload, urutan: nextOrder }])
+          .select('*')
+          .single();
+
+        if (error) throw error;
+        if (!data) throw new Error('Supabase tidak mengembalikan row setelah insert.');
+
+        await loadPopups(false);
+        resetForm();
+        await Swal.fire({ title: 'Berhasil', text: 'Pop-up baru berhasil ditambahkan dan tersimpan di Supabase.', icon: 'success', background: '#0F172A', color: '#fff' });
+      }
+    } catch (error: any) {
+      console.error('[AdminPopup] save failed:', error);
+      await Swal.fire({ title: 'Gagal menyimpan', text: getErrorMessage(error), icon: 'error', background: '#0F172A', color: '#fff' });
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
 
-  const startEdit = (item: PopupConfig) => {
+  const editPopup = (item: PopupConfig) => {
+    if (!isUuid(item.id)) {
+      Swal.fire('Gagal edit', 'ID data pop-up tidak valid. Silakan refresh data.', 'error');
+      return;
+    }
     setEditingId(item.id);
-    setNewPopup({ 
-      judul: item.judul, 
-      deskripsi: item.deskripsi, 
-      url_gambar: item.url_gambar, 
-      file_url: item.file_url || '' 
+    setForm({
+      judul: item.judul || '',
+      deskripsi: item.deskripsi || '',
+      url_gambar: item.url_gambar || '',
+      file_url: item.file_url || '',
     });
-    setPreviewImage(item.url_gambar);
+    setPreview(item.url_gambar || null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setNewPopup({ url_gambar: '', judul: '', deskripsi: '', file_url: '' });
-    setPreviewImage(null);
+  const togglePopup = async (item: PopupConfig) => {
+    if (!isUuid(item.id)) return Swal.fire('Gagal', 'ID pop-up tidak valid.', 'error');
+    try {
+      const { error } = await supabase
+        .from('konfigurasi_popup')
+        .update({ is_active: !item.is_active })
+        .eq('id', item.id);
+      if (error) throw error;
+      await loadPopups(false);
+    } catch (error: any) {
+      console.error('[AdminPopup] toggle failed:', error);
+      await Swal.fire('Gagal mengubah status', getErrorMessage(error), 'error');
+    }
   };
 
-  const toggleStatus = async (id: string, currentStatus: boolean) => {
-    const { error } = await supabase.from('konfigurasi_popup').update({ is_active: !currentStatus }).eq('id', id);
-    if (!error) fetchPopups();
-  };
+  const deletePopup = async (item: PopupConfig) => {
+    if (!isUuid(item.id)) return Swal.fire('Gagal hapus', 'ID pop-up tidak valid.', 'error');
 
-  const handleDelete = async (id: string) => {
-    const res = await Swal.fire({
+    const result = await Swal.fire({
       title: 'Hapus Pop-up?',
-      text: "Tindakan ini tidak dapat dibatalkan!",
+      text: 'Data akan dihapus permanen dari Supabase.',
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#ef4444',
-      cancelButtonColor: '#1e293b',
-      confirmButtonText: 'Ya, Hapus!',
+      confirmButtonText: 'Ya, hapus',
+      cancelButtonText: 'Batal',
+      confirmButtonColor: '#e11d48',
       background: '#0F172A',
-      color: '#fff'
+      color: '#fff',
     });
-    if (res.isConfirmed) {
-      await supabase.from('konfigurasi_popup').delete().eq('id', id);
-      fetchPopups();
+    if (!result.isConfirmed) return;
+
+    try {
+      const { error } = await supabase.from('konfigurasi_popup').delete().eq('id', item.id);
+      if (error) throw error;
+      await loadPopups(false);
+      if (editingId === item.id) resetForm();
+      await Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Pop-up berhasil dihapus dari Supabase', showConfirmButton: false, timer: 1800 });
+    } catch (error: any) {
+      console.error('[AdminPopup] delete failed:', error);
+      await Swal.fire('Gagal menghapus', getErrorMessage(error), 'error');
     }
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-6xl mx-auto min-h-screen bg-[#050505]">
-      <header className="mb-10 flex justify-between items-end">
-        <div>
-            <h1 className="text-3xl md:text-4xl font-black text-white uppercase italic tracking-tighter">
-            Kelola <span className="text-blue-500">Pop-up Promo</span>
-            </h1>
-            <p className="text-white/40 font-bold text-xs uppercase tracking-[0.3em] mt-2">Atur tampilan & lampiran landing page</p>
+    <div className="min-h-screen bg-[#070d1a] text-white p-3 sm:p-6 overflow-y-auto">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-black uppercase italic">Kelola <span className="text-blue-500">Pop-up Promo</span></h1>
+            <p className="text-white/40 text-xs mt-1">Sumber data utama: Supabase `konfigurasi_popup`.</p>
+          </div>
+          {editingId && <button type="button" onClick={resetForm} className="px-4 py-2 rounded-xl bg-rose-600/20 text-rose-400 border border-rose-500/30">Batal Edit</button>}
         </div>
-        {editingId && (
-            <button onClick={cancelEdit} className="px-6 py-2 bg-rose-600/10 text-rose-500 rounded-full text-[10px] font-black uppercase tracking-widest border border-rose-500/20 hover:bg-rose-600 hover:text-white transition-all">
-                Batal Edit
-            </button>
-        )}
-      </header>
 
-      {/* FORM INPUT */}
-      <div className={`bg-[#0F172A] rounded-[2.5rem] border transition-all duration-500 ${editingId ? 'border-blue-500/50 shadow-blue-500/10' : 'border-white/5 shadow-2xl'} mb-12 overflow-hidden`}>
-        <div className="grid grid-cols-1 lg:grid-cols-5">
-          <div className="lg:col-span-2 bg-black/40 flex items-center justify-center relative overflow-hidden">
-            <div className="w-full h-full min-h-[400px] lg:min-h-full relative flex items-center justify-center">
-              {previewImage ? (
-                <div className="w-full h-full absolute inset-0 group">
-                  <img src={previewImage} className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-40 scale-110" alt="" />
-                  <img src={previewImage} className="relative z-10 w-full h-full object-cover" alt="Preview" />
-                  <div className="absolute inset-0 z-20 bg-black/0 group-hover:bg-black/40 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
-                    <label className="cursor-pointer p-4 bg-white/10 backdrop-blur-md rounded-full border border-white/20 hover:bg-blue-600 transition-colors">
-                      <Camera className="text-white" size={24} />
-                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploading} />
-                    </label>
-                  </div>
-                  <button onClick={() => {setPreviewImage(null); setNewPopup({...newPopup, url_gambar: ''})}} className="absolute top-6 right-6 z-30 p-2 bg-rose-600 text-white rounded-full shadow-2xl hover:scale-110 transition-transform">
-                    <X size={18} />
-                  </button>
-                </div>
+        <form onSubmit={handleSave} className="bg-[#0F172A] border border-white/10 rounded-3xl p-4 sm:p-7">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+            <div className="lg:col-span-2 min-h-[260px] rounded-2xl bg-black/40 border border-white/10 flex items-center justify-center overflow-hidden relative">
+              {preview ? (
+                <>
+                  <img src={preview} alt="Preview pop-up" className="w-full h-full object-contain max-h-[460px]" />
+                  <button type="button" onClick={() => { setPreview(null); setForm((prev) => ({ ...prev, url_gambar: '' })); }} className="absolute top-3 right-3 p-2 rounded-full bg-rose-600"><X size={16} /></button>
+                </>
               ) : (
-                <label className="w-full h-full cursor-pointer flex flex-col items-center justify-center group gap-4 p-8">
-                  <div className="p-6 bg-blue-600/10 rounded-full text-blue-500 border border-blue-500/20 group-hover:scale-110 group-hover:bg-blue-600 group-hover:text-white transition-all duration-500">
-                    <Upload size={32} />
-                  </div>
-                  <div className="text-center">
-                    <span className="block text-white font-black text-xs uppercase tracking-widest mb-1">Klik Untuk Unggah Poster</span>
-                    <span className="text-white/30 text-[9px] uppercase tracking-tighter italic">Disarankan aspek rasio 4:5</span>
-                  </div>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={isUploading} />
+                <label className="cursor-pointer flex flex-col items-center gap-3 p-8 text-center">
+                  <Upload size={32} className="text-blue-500" />
+                  <span className="font-bold text-sm">Unggah Poster Pop-up</span>
+                  <input type="file" accept="image/*" className="hidden" disabled={uploading || saving} onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadImage(file); e.currentTarget.value = ''; }} />
                 </label>
               )}
+              {uploading && <div className="absolute inset-0 bg-black/70 flex items-center justify-center"><Loader2 className="animate-spin" /></div>}
+            </div>
+
+            <div className="lg:col-span-3 space-y-4">
+              <input required value={form.judul} onChange={(e) => setForm({ ...form, judul: e.target.value })} placeholder="Judul Promosi" className="w-full rounded-2xl bg-black/30 border border-white/10 p-4 outline-none focus:border-blue-500" />
+              <textarea value={form.deskripsi} onChange={(e) => setForm({ ...form, deskripsi: e.target.value })} placeholder="Deskripsi informasi" className="w-full h-40 rounded-2xl bg-black/30 border border-white/10 p-4 outline-none focus:border-blue-500 resize-none" />
+              <input value={form.file_url} onChange={(e) => setForm({ ...form, file_url: e.target.value })} placeholder="URL lampiran dokumen (opsional)" className="w-full rounded-2xl bg-black/30 border border-white/10 p-4 outline-none focus:border-blue-500" />
+              <button type="submit" disabled={saving || uploading} className="w-full py-4 rounded-2xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 font-black uppercase flex items-center justify-center gap-2">
+                {saving ? <Loader2 className="animate-spin" /> : editingId ? <><Edit3 size={17} /> PERBARUI POP-UP</> : <><ImageIcon size={17} /> TAMBAH POP-UP</>}
+              </button>
             </div>
           </div>
-          <form onSubmit={handleSave} className="lg:col-span-3 p-8 lg:p-12 space-y-6 flex flex-col justify-center border-l border-white/5">
-            <div className="space-y-4">
-              <input required className="w-full bg-black/30 border border-white/10 rounded-2xl p-4 text-white font-bold outline-none focus:border-blue-500 transition-all" placeholder="Judul Promosi" value={newPopup.judul} onChange={e => setNewPopup({...newPopup, judul: e.target.value})} />
-              
-              <div className="relative group">
-                <textarea 
-                   className="w-full bg-black/30 border border-white/10 rounded-2xl p-4 text-white font-bold outline-none focus:border-blue-500 h-32 resize-none transition-all scrollbar-hide" 
-                   placeholder="Deskripsi Informasi (Link akan otomatis terdeteksi)" 
-                   value={newPopup.deskripsi} 
-                   onChange={e => setNewPopup({...newPopup, deskripsi: e.target.value})} 
-                />
-                {/* PREVIEW TEKS REALTIME DI BAWAH INPUT (DIPERBAIKI UNTUK WRAPPING) */}
-                <div className="mt-2 p-4 bg-blue-500/5 rounded-xl border border-blue-500/10 overflow-hidden w-full">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-blue-400 mb-2">Live Preview Deskripsi:</p>
-                    <div className="text-[11px] text-white/60 leading-relaxed font-medium break-words w-full whitespace-normal">
-                       {renderDescriptionWithLinks(newPopup.deskripsi) || <span className="italic opacity-30">Belum ada deskripsi...</span>}
-                    </div>
-                </div>
-              </div>
-              
-              {/* INPUT FILE DOWNLOAD */}
-              <div className="relative group">
-                <div className={`flex items-center gap-4 p-4 rounded-2xl border-2 border-dashed transition-all ${newPopup.file_url ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-white/10 bg-black/20'}`}>
-                  <div className={`p-3 rounded-xl ${newPopup.file_url ? 'bg-emerald-500 text-white' : 'bg-white/5 text-white/20'}`}>
-                    <FileText size={20} />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-white text-[10px] font-black uppercase tracking-widest">
-                      {newPopup.file_url ? 'File Terlampir' : 'Lampiran Dokumen (Opsional)'}
-                    </p>
-                    <p className="text-white/30 text-[9px] italic">PDF, DOCX, atau Gambar</p>
-                  </div>
-                  <label className="cursor-pointer bg-white/5 hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-[9px] font-black transition-all">
-                    {isFileUploading ? 'UPLOADING...' : newPopup.file_url ? 'GANTI FILE' : 'PILIH FILE'}
-                    <input type="file" className="hidden" onChange={handleFileUpload} disabled={isFileUploading} />
-                  </label>
-                </div>
-                {newPopup.file_url && (
-                  <button type="button" onClick={() => setNewPopup({...newPopup, file_url: ''})} className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full">
-                    <X size={12} />
-                  </button>
-                )}
-              </div>
-            </div>
+        </form>
 
-            <button type="submit" disabled={isSaving || isUploading || isFileUploading} className={`w-full py-5 rounded-2xl font-black uppercase text-[11px] tracking-[0.3em] transition-all shadow-2xl flex items-center justify-center gap-3 text-white ${editingId ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-              {isSaving ? <Loader2 className="animate-spin" /> : editingId ? 'PERBARUI POP-UP' : 'AKTIFKAN POP-UP'}
-            </button>
-          </form>
+        <div className="flex items-center justify-between">
+          <h2 className="font-black uppercase tracking-widest text-sm text-white/60">Data Pop-up di Supabase ({popups.length})</h2>
+          <button type="button" onClick={() => loadPopups()} className="text-xs text-blue-400 flex items-center gap-1"><RefreshCw size={13} /> Refresh</button>
         </div>
-      </div>
 
-      <div className="flex items-center gap-4 mb-8">
-        <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent to-white/10"></div>
-        <h2 className="text-white/40 font-black text-[10px] uppercase tracking-[0.5em] whitespace-nowrap">Tahan & Geser Ikon Grip Untuk Urutan</h2>
-        <div className="h-[1px] flex-1 bg-gradient-to-l from-transparent to-white/10"></div>
+        {loading ? (
+          <div className="py-16 flex justify-center"><Loader2 className="animate-spin text-blue-500" size={36} /></div>
+        ) : popups.length === 0 ? (
+          <div className="py-16 text-center text-white/30 border border-dashed border-white/10 rounded-3xl">Belum ada pop-up di database Supabase.</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {popups.map((item) => (
+              <div key={item.id} className="bg-[#0F172A] border border-white/10 rounded-3xl overflow-hidden">
+                <div className="aspect-[4/5] bg-black"><img src={item.url_gambar} alt={item.judul || 'Pop-up'} className="w-full h-full object-cover" /></div>
+                <div className="p-5 space-y-3">
+                  <div className="flex justify-between gap-2">
+                    <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full ${item.is_active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/10 text-white/40'}`}>{item.is_active ? `AKTIF • ${item.urutan + 1}` : 'NON-AKTIF'}</span>
+                    <span className="text-[9px] text-white/20 truncate">{item.id}</span>
+                  </div>
+                  <h3 className="font-black uppercase text-sm line-clamp-2">{item.judul || 'Tanpa judul'}</h3>
+                  <p className="text-xs text-white/40 line-clamp-3">{item.deskripsi || '-'}</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button type="button" onClick={() => togglePopup(item)} className="py-3 rounded-xl bg-white/5 hover:bg-blue-600 flex justify-center" title={item.is_active ? 'Nonaktifkan' : 'Aktifkan'}>{item.is_active ? <Power size={16} /> : <PowerOff size={16} />}</button>
+                    <button type="button" onClick={() => editPopup(item)} className="py-3 rounded-xl bg-blue-600 flex justify-center" title="Edit"><Edit3 size={16} /></button>
+                    <button type="button" onClick={() => deletePopup(item)} className="py-3 rounded-xl bg-rose-600/20 text-rose-400 hover:bg-rose-600 hover:text-white flex justify-center" title="Hapus"><Trash2 size={16} /></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-
-      {loading ? (
-        <div className="flex justify-center py-20"><Loader2 className="animate-spin text-blue-500" size={40} /></div>
-      ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={popups.map(p => p.id)} strategy={verticalListSortingStrategy}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {popups.map(item => (
-                <SortablePopupItem 
-                  key={item.id} 
-                  item={item} 
-                  toggleStatus={toggleStatus} 
-                  startEdit={startEdit} 
-                  handleDelete={handleDelete} 
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
-      )}
     </div>
   );
 }
